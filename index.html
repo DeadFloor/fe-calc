@@ -78,11 +78,14 @@
 
         <div class="gc-wizard" id="gc-wizard" aria-label="Guided setup">
           <ol class="gc-wiz-progress" id="gc-wiz-progress">
-            <li class="is-active" data-s="1"><span>1</span> Cell</li>
-            <li data-s="2"><span>2</span> Schedule</li>
-            <li data-s="3"><span>3</span> Current</li>
-            <li data-s="4"><span>4</span> Products</li>
-            <li data-s="5"><span>5</span> Results</li>
+            <li class="is-active" data-s="1"><span>1</span> Tech</li>
+            <li data-s="2"><span>2</span> pH</li>
+            <li data-s="3"><span>3</span> iR</li>
+            <li data-s="4"><span>4</span> Cell</li>
+            <li data-s="5"><span>5</span> GC</li>
+            <li data-s="6"><span>6</span> Chrono</li>
+            <li data-s="7"><span>7</span> Prod</li>
+            <li data-s="8"><span>8</span> Results</li>
           </ol>
           <p class="gc-wiz-hint" id="gc-wiz-step-hint"></p>
           <p class="gc-wiz-warn" id="gc-wiz-warn" hidden></p>
@@ -92,7 +95,7 @@
           </div>
         </div>
 
-        <div class="gc-summary" id="gc-summary" aria-live="polite" data-wiz="5">
+        <div class="gc-summary" id="gc-summary" aria-live="polite" data-wiz="8">
           <div class="gc-summary__main">
             <span class="gc-summary__label">Total FE · <span id="gc-sum-label">latest injection</span></span>
             <span class="gc-summary__value" id="gc-total">—</span>
@@ -107,68 +110,165 @@
           <p class="gc-flag" id="gc-flag" hidden></p>
         </div>
 
-        <article class="calc-card" data-wiz="1" id="gc-step-cell">
+        <!-- Step 1 Technique -->
+        <article class="calc-card" data-wiz="1" id="gc-step-tech">
           <header class="calc-card__header">
-            <h2 class="calc-card__title">1 · Cell &amp; gas setup</h2>
-            <p class="calc-card__desc">Geometric area and CO₂ outlet flow set the scale for online FE. Defaults match a typical H-cell / flow cell.</p>
+            <h2 class="calc-card__title">1 · Technique</h2>
+            <p class="calc-card__desc">Choose how the electrolysis is controlled. This decides what you set vs what you read from the chrono plot.</p>
           </header>
           <div class="gc-grid">
             <div class="field gc-wide">
-              <span class="field__label">How will you enter current? <button type="button" class="info-i" data-info="Choose |j|×area if you read current density from the chronopotentiogram/amperogram. Choose Total I if you prefer absolute current in mA." aria-label="About current input">i</button></span>
+              <span class="field__label">Technique <button type="button" class="info-i" data-info="Chronoamperometry (CA) holds potential and records current. Chronopotentiometry (CP) holds current and records potential." aria-label="About technique">i</button></span>
+              <div class="seg" role="radiogroup" id="gc-tech">
+                <button type="button" class="seg__btn is-active" data-v="CA">Chronoamperometry (CA)</button>
+                <button type="button" class="seg__btn" data-v="CP">Chronopotentiometry (CP)</button>
+              </div>
+              <p class="field__help" id="gc-tech-help">CA: apply a fixed potential; measure current at each GC injection.</p>
+            </div>
+            <div class="gc-ca-only gc-wide gc-grid" style="padding:0">
+              <label class="field"><span class="field__label">Applied potential E (V) <button type="button" class="info-i" data-info="Setpoint potential from the potentiostat for CA. Enter the value as applied vs your chosen reference electrode." aria-label="About E">i</button></span><input class="input" inputmode="decimal" id="gc-Eset" placeholder="e.g. −1.00"><span class="field__help">Usually negative for CO₂R on the cathodic scale you report.</span></label>
+              <label class="field"><span class="field__label">Reference electrode <button type="button" class="info-i" data-info="Reference used when applying / logging E. Used later to convert E_corr to RHE with pH." aria-label="About reference">i</button></span>
+                <select class="input" id="gc-eref">
+                  <option value="agcl_sat">Ag/AgCl sat. KCl (E° = 0.197 V vs SHE)</option>
+                  <option value="agcl_3m">Ag/AgCl 3 M KCl (E° = 0.210 V)</option>
+                  <option value="agcl_35m">Ag/AgCl 3.5 M KCl (E° = 0.205 V)</option>
+                  <option value="hgoh">Hg/HgO 1 M KOH/NaOH (E° = 0.098 V)</option>
+                  <option value="rhe">Already vs RHE (E° = 0, no pH term)</option>
+                  <option value="custom">Custom E° vs SHE</option>
+                </select>
+              </label>
+              <label class="field gc-e0-custom" hidden><span class="field__label">Custom E°_ref (V vs SHE)</span><input class="input" inputmode="decimal" id="gc-E0" value="0.197"></label>
+            </div>
+            <div class="gc-cp-only gc-wide gc-grid" style="padding:0" hidden>
+              <div class="field gc-wide">
+                <span class="field__label">CP setpoint as</span>
+                <div class="seg" role="radiogroup" id="gc-cpmode">
+                  <button type="button" class="seg__btn is-active" data-v="I">Current (mA)</button>
+                  <button type="button" class="seg__btn" data-v="j">Current density (mA cm⁻²)</button>
+                </div>
+              </div>
+              <label class="field gc-cp-I"><span class="field__label">Applied |I| (mA) <button type="button" class="info-i" data-info="Constant current magnitude set for CP. Sign is treated as cathodic (negative) in iR correction." aria-label="About I set">i</button></span><input class="input" inputmode="decimal" id="gc-Iset" value="10"><span class="field__help">Prefills each injection; override from the log if needed.</span></label>
+              <label class="field gc-cp-j" hidden><span class="field__label">Applied |j| (mA cm⁻²)</span><input class="input" inputmode="decimal" id="gc-jset" value="10"></label>
+              <label class="field"><span class="field__label">Reference for logged E <button type="button" class="info-i" data-info="Reference electrode of the measured potential in CP." aria-label="About CP reference">i</button></span>
+                <select class="input" id="gc-eref-cp">
+                  <option value="agcl_sat">Ag/AgCl sat. KCl (0.197 V)</option>
+                  <option value="agcl_3m">Ag/AgCl 3 M KCl (0.210 V)</option>
+                  <option value="agcl_35m">Ag/AgCl 3.5 M KCl (0.205 V)</option>
+                  <option value="hgoh">Hg/HgO 1 M (0.098 V)</option>
+                  <option value="rhe">Already vs RHE</option>
+                  <option value="custom">Custom E°</option>
+                </select>
+              </label>
+            </div>
+            <div class="field gc-wide">
+              <span class="field__label">How measured current is entered (for FE)</span>
               <div class="seg" role="radiogroup" id="gc-imode">
                 <button type="button" class="seg__btn is-active" data-v="j">j × area</button>
                 <button type="button" class="seg__btn" data-v="I">Total I</button>
               </div>
-              <p class="field__help">You will enter each injection’s value in step 3. A global default can fill blank rows.</p>
+              <p class="field__help">Used for Faradaic efficiency. CA: enter measured j or I per injection. CP: setpoint fills current; you enter measured E.</p>
             </div>
-            <label class="field gc-j"><span class="field__label">Default |j| (mA cm⁻²) <button type="button" class="info-i" data-info="Fallback current density when an injection row is left blank. Read |j| from your chronoamperogram or chronopotentiogram at each injection time." aria-label="About default j">i</button></span><input class="input" inputmode="decimal" id="gc-j" value="100"><span class="field__help">Typical lab range 10–200 mA cm⁻².</span></label>
-            <label class="field gc-j"><span class="field__label">Geometric area (cm²) <button type="button" class="info-i" data-info="Exposed geometric electrode area (not ECSA). Measure from the catalyst spot or gasket opening." aria-label="About area">i</button></span><input class="input" inputmode="decimal" id="gc-area" value="1"><span class="field__help">Often 1 cm² for lab electrodes.</span></label>
-            <label class="field gc-i" hidden><span class="field__label">Default |I| (mA) <button type="button" class="info-i" data-info="Fallback total current when an injection row is left blank." aria-label="About default I">i</button></span><input class="input" inputmode="decimal" id="gc-Itot" value="100"><span class="field__help">Absolute current from the potentiostat.</span></label>
-            <label class="field"><span class="field__label">CO₂ flow (sccm = mL min⁻¹) <button type="button" class="info-i" data-info="Volumetric CO₂ feed (and assumed outlet) flow rate from your MFC setpoint. Online FE treats outlet ≈ inlet." aria-label="About CO2 flow">i</button></span><input class="input" inputmode="decimal" id="gc-flow" value="20"><span class="field__help">Common values 10–30 sccm.</span></label>
+            <label class="field gc-j"><span class="field__label">Default |j| (mA cm⁻²)</span><input class="input" inputmode="decimal" id="gc-j" value="100"></label>
+            <label class="field gc-i" hidden><span class="field__label">Default |I| (mA)</span><input class="input" inputmode="decimal" id="gc-Itot" value="100"></label>
+          </div>
+        </article>
+
+        <!-- Step 2 pH -->
+        <article class="calc-card" data-wiz="2" id="gc-step-ph">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">2 · Measured pH</h2>
+            <p class="calc-card__desc">Optional. Needed to convert E_corr to the RHE scale (unless you already work vs RHE).</p>
+          </header>
+          <div class="gc-grid">
+            <label class="field"><span class="field__label">Electrolyte pH <button type="button" class="info-i" data-info="Bulk electrolyte pH from a calibrated meter. Used in E_RHE = E_corr + E°_ref + slope·pH." aria-label="About pH">i</button></span><input class="input" inputmode="decimal" id="gc-pH" placeholder="e.g. 6.8"><span class="field__help">Leave blank to skip RHE conversion (E vs ref still shown).</span></label>
             <div class="field gc-wide">
-              <span class="field__label">Flow reference <button type="button" class="info-i" data-info="Standard uses T = 273.15 K and P = 101325 Pa for the ideal-gas molar flow. Custom lets you enter the gas temperature and pressure at the flow meter." aria-label="About flow reference">i</button></span>
+              <span class="field__label">Nernst slope <button type="button" class="info-i" data-info="0.0591 V is the common 25 °C approximation. 2.303RT/F uses your entered gas/electrolyte T." aria-label="About slope">i</button></span>
+              <div class="seg" role="radiogroup" id="gc-slope">
+                <button type="button" class="seg__btn is-active" data-v="0591">0.0591 V (25 °C)</button>
+                <button type="button" class="seg__btn" data-v="nernst">2.303 RT/F</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Step 3 iR -->
+        <article class="calc-card" data-wiz="3" id="gc-step-ir">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">3 · iR compensation</h2>
+            <p class="calc-card__desc">Correct the applied / logged potential for uncompensated resistance. Formulas from Faraday (cathodic I negative).</p>
+          </header>
+          <div class="gc-grid">
+            <div class="field gc-wide">
+              <span class="field__label">Compensation mode <button type="button" class="info-i" data-info="Current interrupt: Ru from the potentiostat CI measurement. Manual: enter Ru yourself (same correction math)." aria-label="About iR mode">i</button></span>
+              <div class="seg" role="radiogroup" id="gc-irmode">
+                <button type="button" class="seg__btn is-active" data-v="ci">Current interrupt</button>
+                <button type="button" class="seg__btn" data-v="manual">Manual</button>
+              </div>
+            </div>
+            <label class="field"><span class="field__label">Ru (Ω) <button type="button" class="info-i" data-info="Uncompensated resistance before fractional compensation. Ru_unc = Ru·(1 − f_comp/100)." aria-label="About Ru">i</button></span><input class="input" inputmode="decimal" id="gc-Ru" placeholder="e.g. 12"><span class="field__help">From CI readout or EIS / manual estimate.</span></label>
+            <label class="field"><span class="field__label">% compensated during run <button type="button" class="info-i" data-info="Fraction already compensated by the potentiostat (0–95%). If 100%, iR correction is skipped. Default 0." aria-label="About f_comp">i</button></span><input class="input" inputmode="decimal" id="gc-fComp" value="0"><span class="field__help">Capped at 95% in the correction; enter 100 to skip.</span></label>
+            <p class="gc-wide gc-ir-summary" id="gc-ir-summary">At each GC injection, E_corr = E_applied − I·Ru_uncorrected (cathodic I negative), then convert to RHE with the chosen reference and measured pH.</p>
+            <p class="gc-wide gc-hint">Ru_unc = Ru·(1 − f_comp). With |I| stored for cathodic runs: E_corr = E_applied + |I|·Ru_unc.</p>
+          </div>
+        </article>
+
+        <!-- Step 4 Misc cell -->
+        <article class="calc-card" data-wiz="4" id="gc-step-cell">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">4 · Cell &amp; gas setup</h2>
+            <p class="calc-card__desc">Geometric area and CO₂ flow set the scale for online FE.</p>
+          </header>
+          <div class="gc-grid">
+            <label class="field"><span class="field__label">Geometric area (cm²) <button type="button" class="info-i" data-info="Exposed geometric electrode area (not ECSA)." aria-label="About area">i</button></span><input class="input" inputmode="decimal" id="gc-area" value="1"><span class="field__help">Often 1 cm².</span></label>
+            <label class="field"><span class="field__label">CO₂ flow (sccm = mL min⁻¹) <button type="button" class="info-i" data-info="MFC setpoint; online FE assumes outlet ≈ inlet." aria-label="About flow">i</button></span><input class="input" inputmode="decimal" id="gc-flow" value="20"></label>
+            <div class="field gc-wide">
+              <span class="field__label">Flow reference</span>
               <div class="seg" role="radiogroup" id="gc-ref">
                 <button type="button" class="seg__btn is-active" data-v="std">Standard (273.15 K, 1 atm)</button>
                 <button type="button" class="seg__btn" data-v="custom">Custom T, P</button>
               </div>
             </div>
-            <label class="field gc-tp"><span class="field__label">Gas T (K)</span><input class="input" inputmode="decimal" id="gc-T" value="298.15"><span class="field__help">Temperature used for ṅ_gas.</span></label>
-            <label class="field gc-tp"><span class="field__label">Gas P (Pa)</span><input class="input" inputmode="decimal" id="gc-P" value="101325"><span class="field__help">Pressure used for ṅ_gas (1 atm = 101325 Pa).</span></label>
+            <label class="field gc-tp"><span class="field__label">Gas / electrolyte T (K)</span><input class="input" inputmode="decimal" id="gc-T" value="298.15"><span class="field__help">Also used for 2.303 RT/F if selected.</span></label>
+            <label class="field gc-tp"><span class="field__label">Gas P (Pa)</span><input class="input" inputmode="decimal" id="gc-P" value="101325"></label>
           </div>
         </article>
 
-        <article class="calc-card" data-wiz="2" id="gc-step-sched">
+        <!-- Step 5 Schedule -->
+        <article class="calc-card" data-wiz="5" id="gc-step-sched">
           <header class="calc-card__header">
-            <h2 class="calc-card__title">2 · GC injection schedule</h2>
-            <p class="calc-card__desc">Times auto-fill from the first injection, analysis length, and post-run. Override any row later with “edit”.</p>
+            <h2 class="calc-card__title">5 · GC injection schedule</h2>
+            <p class="calc-card__desc">Times auto-fill from the first injection, analysis length, and post-run.</p>
           </header>
           <div class="gc-grid gc-sched">
-            <label class="field"><span class="field__label">Time of 1st injection (min) <button type="button" class="info-i" data-info="Electrolysis time when the first GC sample is taken (often after a delay for gas transit)." aria-label="About first injection">i</button></span><input class="input" inputmode="decimal" id="gc-s-t1"><span class="field__help">Example: 15 min.</span></label>
-            <label class="field"><span class="field__label">GC analysis time (min) <button type="button" class="info-i" data-info="Length of one GC run (chromatogram) before the next injection can start." aria-label="About analysis time">i</button></span><input class="input" inputmode="decimal" id="gc-s-ana"><span class="field__help">From your GC method.</span></label>
-            <label class="field"><span class="field__label">Post-run time (min) <button type="button" class="info-i" data-info="Oven cool-down / equilibration after each chromatogram before the next injection." aria-label="About post-run">i</button></span><input class="input" inputmode="decimal" id="gc-s-post"><span class="field__help">Often a few minutes.</span></label>
-            <label class="field"><span class="field__label">Number of injections (1–6) <button type="button" class="info-i" data-info="How many GC samples you will average. Three or four is common." aria-label="About injection count">i</button></span><input class="input" type="number" min="1" max="6" step="1" inputmode="numeric" id="gc-s-count"><span class="field__help">t<sub>k</sub> = t<sub>1</sub> + (k−1)·(analysis + post-run).</span></label>
+            <label class="field"><span class="field__label">Time of 1st injection (min)</span><input class="input" inputmode="decimal" id="gc-s-t1"><span class="field__help">Example: 15 min.</span></label>
+            <label class="field"><span class="field__label">GC analysis time (min)</span><input class="input" inputmode="decimal" id="gc-s-ana"></label>
+            <label class="field"><span class="field__label">Post-run time (min)</span><input class="input" inputmode="decimal" id="gc-s-post"></label>
+            <label class="field"><span class="field__label">Number of injections (1–6)</span><input class="input" type="number" min="1" max="6" step="1" inputmode="numeric" id="gc-s-count"><span class="field__help">t<sub>k</sub> = t<sub>1</sub> + (k−1)·(analysis + post-run).</span></label>
           </div>
           <div class="gc-sched-preview" id="gc-sched-preview" aria-live="polite"></div>
         </article>
 
-        <article class="calc-card" data-wiz="3" id="gc-step-current">
+        <!-- Step 6 Chrono per injection -->
+        <article class="calc-card" data-wiz="6" id="gc-step-current">
           <header class="calc-card__header">
-            <h2 class="calc-card__title">3 · Current at each injection</h2>
-            <p class="calc-card__desc">Read |j| or |I| from the chronoamperogram / chronopotentiogram at each injection time. Blank uses the step‑1 default.</p>
+            <h2 class="calc-card__title">6 · Chrono values at each injection</h2>
+            <p class="calc-card__desc" id="gc-chrono-desc">CA: enter measured |j| or |I| from the chronoamperogram. CP: enter measured E; current is prefilled from the setpoint.</p>
           </header>
           <div id="gc-current-step" class="gc-current-step"></div>
+          <div class="gc-table-wrap" style="padding-top:8px"><table class="gc-table" id="gc-ir-table"><thead></thead><tbody></tbody></table></div>
         </article>
 
-        <article class="calc-card" data-wiz="4" id="gc-step-products">
+        <!-- Step 7 Products -->
+        <article class="calc-card" data-wiz="7" id="gc-step-products">
           <header class="calc-card__header gc-head">
-            <h2 class="calc-card__title">4 · Products &amp; amounts</h2>
+            <h2 class="calc-card__title">7 · Products &amp; amounts</h2>
             <div class="gc-actions">
               <button type="button" class="btn btn--cta" id="gc-add-inj">+ Injection</button>
             </div>
           </header>
-          <p class="calc-card__desc" style="padding:0 var(--space-5)">Confirm the product list (full C1–C6 set is preselected), then enter GC ppm per injection. Liquid products use μM, electrolyte volumes, and total charge Q.</p>
+          <p class="calc-card__desc" style="padding:0 var(--space-5)">Confirm products, then enter GC ppm. Liquids use μM, volumes, and Q.</p>
           <div class="gc-prodbar">
-            <span class="field__label">Products <button type="button" class="info-i" data-info="Gas products come from online GC (ppm). Liquid products (formate, alcohols, …) come from HPLC / headspace GC as μM in catholyte and anolyte." aria-label="About products">i</button></span>
+            <span class="field__label">Products</span>
             <div class="gc-presets" id="gc-presets">
               <button type="button" class="chip-btn" data-p="H2">+ H₂</button>
               <button type="button" class="chip-btn" data-p="CO">+ CO</button>
@@ -187,7 +287,8 @@
           <div id="gc-liquid" class="gc-liquid" hidden></div>
         </article>
 
-        <article class="calc-card" id="gc-chart-card" data-wiz="5">
+        <!-- Step 8 Results -->
+        <article class="calc-card" id="gc-chart-card" data-wiz="8">
           <header class="calc-card__header gc-head">
             <h2 class="calc-card__title">Product distribution</h2>
             <div class="gc-toggles"><div class="seg gc-chart-mode" id="gc-chart-view" role="radiogroup" aria-label="Chart view">
@@ -209,7 +310,7 @@
           </div>
         </article>
 
-        <article class="calc-card" data-wiz="5">
+        <article class="calc-card" data-wiz="8">
           <header class="calc-card__header gc-head">
             <h2 class="calc-card__title">Results table</h2>
             <div class="gc-actions">
@@ -219,16 +320,18 @@
             </div>
           </header>
           <div class="gc-table-wrap"><table class="gc-table" id="gc-table"></table></div>
+          <div class="gc-notes-wrap">
+            <label class="field gc-wide"><span class="field__label">Experimental observations <button type="button" class="info-i" data-info="Free-text notes: flooding, black deposits, colour change, pressure spikes, etc. Saved with the run and exported." aria-label="About notes">i</button></span>
+              <textarea class="input gc-notes" id="gc-notes" rows="3" placeholder="e.g. mild flooding after 40 min; black deposits on GDL…"></textarea>
+            </label>
+          </div>
           <details class="gc-formula">
             <summary>Formulas &amp; constants</summary>
             <p><code>t_k = t_1 + (k − 1)·(t_analysis + t_post)</code></p>
-            <p><code>I_k = |j_k| · A</code> per injection (or I_k entered directly; blank row = global value)</p>
-            <p><code>ṅ_gas (mol s⁻¹) = P · (Q_mL/min · 10⁻⁶ / 60) / (R · T)</code>; standard mode uses T = 273.15 K, P = 101325 Pa</p>
-            <p><code>ṅ_i = (ppm_i · 10⁻⁶) · ṅ_gas</code></p>
-            <p><code>FE_i (%) = n_i · F · ṅ_i / I · 100</code></p>
-            <p><code>j_i = FE_i/100 · |j_k|</code>; averages are arithmetic mean ± sample SD (n − 1) of the per-injection values</p>
-            <p>Liquid: <code>FE = n·F·(c_WE·V_W + c_CE·V_C)/Q · 100</code> (c in μM, V in mL, Q in C).</p>
-            <p>R = 8.314462618 J mol⁻¹ K⁻¹, F = 96485.33212 C mol⁻¹ (CODATA exact). Assumes outlet flow ≈ inlet CO₂ flow (no correction for CO₂ consumption/crossover).</p>
+            <p><code>I_k = |j_k| · A</code> (FE uses magnitude; iR uses cathodic-negative convention)</p>
+            <p><code>ṅ_gas = P · (Q_mL/min · 10⁻⁶ / 60) / (R · T)</code>; <code>FE_i = n_i · F · ṅ_i / I · 100</code>; <code>j_i = FE_i/100 · |j_k|</code></p>
+            <p><strong>iR / RHE (Faraday):</strong> <code>Ru_unc = Ru·(1 − f_comp)</code>; with signed cathodic I: <code>E_corr = E_applied − I·Ru_unc</code>; equivalent with stored |I|: <code>E_corr = E_applied + |I|·Ru_unc</code>. If f_comp = 100%, skip correction. <code>E_RHE = E_corr + E°_ref + slope·pH</code>.</p>
+            <p>Liquid: <code>FE = n·F·(c_WE·V_W + c_CE·V_C)/Q · 100</code>. R = 8.314462618, F = 96485.33212.</p>
           </details>
         </article>
       </section>

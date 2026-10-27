@@ -678,9 +678,53 @@
     var qc = (c_ce_uM / 1e6) * (Vc_mL / 1e3) * n * F;
     return (qw + qc) / Q_C * 100;
   }
+  /* iR / RHE — Faraday guidance.
+     Convention: cathodic current is negative. App stores |I|; equivalent forms:
+       E_corr = E_applied − I_signed·Ru_unc   (I_signed = −|I|)
+       E_corr = E_applied + |I|·Ru_unc
+     Ru_unc = Ru·(1 − f_comp) with f_comp in [0,1]; if f_comp ≥ 1 (100%), skip correction. */
+  var EREF = {
+    agcl_sat: { label: "Ag/AgCl sat. KCl", E0: 0.197 },
+    agcl_3m: { label: "Ag/AgCl 3 M KCl", E0: 0.210 },
+    agcl_35m: { label: "Ag/AgCl 3.5 M KCl", E0: 0.205 },
+    hgoh: { label: "Hg/HgO 1 M KOH/NaOH", E0: 0.098 },
+    rhe: { label: "vs RHE already", E0: 0, noPh: true },
+    custom: { label: "Custom", E0: null }
+  };
+  function ruUnc(Ru_ohm, f_comp_pct) {
+    var f = (f_comp_pct == null || f_comp_pct === "") ? 0 : Number(f_comp_pct);
+    if (!isFinite(Ru_ohm) || Ru_ohm < 0) return NaN;
+    if (!isFinite(f) || f < 0) f = 0;
+    if (f >= 100) return 0; /* skip correction sentinel handled by caller via f>=100 */
+    if (f > 95) f = 95;
+    return Ru_ohm * (1 - f / 100);
+  }
+  function eCorr(E_applied, I_A_abs, Ru_ohm, f_comp_pct) {
+    /* I_A_abs = |I| in amperes. Cathodic: E_corr = E_app + |I|·Ru_unc */
+    if (!isFinite(E_applied)) return NaN;
+    var f = (f_comp_pct == null || f_comp_pct === "") ? 0 : Number(f_comp_pct);
+    if (isFinite(f) && f >= 100) return E_applied;
+    var ru = ruUnc(Ru_ohm, f_comp_pct);
+    if (!isFinite(ru) || !isFinite(I_A_abs)) return NaN;
+    return E_applied + Math.abs(I_A_abs) * ru;
+  }
+  function nernstSlope(mode, T_K) {
+    if (mode === "nernst") {
+      var T = isFinite(T_K) ? T_K : 298.15;
+      return 2.303 * R * T / F;
+    }
+    return 0.0591;
+  }
+  function eRhe(E_corr, E0_ref, pH, slope, alreadyRhe) {
+    if (!isFinite(E_corr)) return NaN;
+    if (alreadyRhe) return E_corr;
+    if (!isFinite(E0_ref)) return NaN;
+    if (!isFinite(pH)) return NaN; /* need pH for RHE */
+    return E_corr + E0_ref + slope * pH;
+  }
   /* t_k = t_1 + (k-1)·(t_analysis + t_post); k is 0-based here */
   function schedTime(k, sc) { var p = function (v) { return parseFloat(String(v).replace(",", ".")); }; return p(sc.t1) + k * (p(sc.ana) + p(sc.post)); }
-  var GC = { R: R, F: F, molarFlow: molarFlow, fe: fe, feLiquid: feLiquid, schedTime: schedTime };
+  var GC = { R: R, F: F, molarFlow: molarFlow, fe: fe, feLiquid: feLiquid, schedTime: schedTime, ruUnc: ruUnc, eCorr: eCorr, nernstSlope: nernstSlope, eRhe: eRhe, EREF: EREF };
   if (typeof module !== "undefined" && module.exports) { module.exports = GC; return; }
   root.GCFE = GC;
 
@@ -700,10 +744,16 @@
     var P = PRESETS[id];
     return { id: id, name: P.name, label: P.label, formula: P.formula, n: P.n, phase: P.phase, detector: P.detector, hex: P.hex };
   }
-  var SCHEMA = 2; /* 2 = full C1–C6 gas+liquid catalog from Steve's workbook */
+  var SCHEMA = 3; /* 3 = technique + iR/RHE + notes */
   function defaults() {
     return {
       schema: SCHEMA,
+      technique: "CA", cpmode: "I",
+      Eset: "-1.0", Iset: "10", jset: "10",
+      eref: "agcl_sat", E0: "0.197",
+      pH: "", slopeMode: "0591",
+      irMode: "ci", Ru: "", fComp: "0",
+      notes: "",
       imode: "j", j: "100", area: "1", Itot: "100", flow: "20", ref: "std", T: "298.15", P: "101325",
       Q: "", Vw: "15", Vc: "15",
       liq: {},
@@ -716,10 +766,12 @@
   try { S = JSON.parse(localStorage.getItem(KEY)) || defaults(); } catch (e) { S = defaults(); }
   if (typeof location !== "undefined" && location.hash.indexOf("#demo") === 0) {
     S = defaults();
-    S.inj = [{ j: "100.4", ppm: { H2: "7200", CO: "16800", CH4: "520", C2H4: "1050" } },
-      { j: "98.7", ppm: { H2: "7900", CO: "16100", CH4: "560", C2H4: "1010" } },
-      { j: "101.6", ppm: { H2: "8600", CO: "15400", CH4: "610", C2H4: "980" } },
-      { j: "99.2", ppm: { H2: "9100", CO: "14900", CH4: "640", C2H4: "960" } }];
+    S.technique = "CA"; S.Eset = "-1.00"; S.eref = "agcl_sat"; S.pH = "6.8"; S.Ru = "10"; S.fComp = "0";
+    S.notes = "Demo run — mild bubbling; no flooding.";
+    S.inj = [{ j: "100.4", E: "-1.00", ppm: { H2: "7200", CO: "16800", CH4: "520", C2H4: "1050" } },
+      { j: "98.7", E: "-1.00", ppm: { H2: "7900", CO: "16100", CH4: "560", C2H4: "1010" } },
+      { j: "101.6", E: "-1.00", ppm: { H2: "8600", CO: "15400", CH4: "610", C2H4: "980" } },
+      { j: "99.2", E: "-1.00", ppm: { H2: "9100", CO: "14900", CH4: "640", C2H4: "960" } }];
   }
   function migrate() {
     if (!S.sched) S.sched = { t1: "15", ana: "12", post: "3", count: S.inj.length || 4 };
@@ -727,6 +779,19 @@
     if (S.Q == null) S.Q = "";
     if (S.Vw == null) S.Vw = "15";
     if (S.Vc == null) S.Vc = "15";
+    if (!S.technique) S.technique = "CA";
+    if (!S.cpmode) S.cpmode = "I";
+    if (S.Eset == null) S.Eset = "";
+    if (S.Iset == null) S.Iset = S.Itot || "";
+    if (S.jset == null) S.jset = S.j || "";
+    if (!S.eref) S.eref = "agcl_sat";
+    if (S.E0 == null) S.E0 = "0.197";
+    if (S.pH == null) S.pH = "";
+    if (!S.slopeMode) S.slopeMode = "0591";
+    if (!S.irMode) S.irMode = "ci";
+    if (S.Ru == null) S.Ru = "";
+    if (S.fComp == null) S.fComp = "0";
+    if (S.notes == null) S.notes = "";
     /* One-shot: expand saved product lists to the full workbook catalog, keeping user values. */
     if (!(S.schema >= SCHEMA)) {
       var byId = {};
@@ -775,17 +840,53 @@
     var nd = molarFlow(pnum(S.flow), T, P);
     return { I_A: Math.abs(I_mA) / 1000, I_mA: Math.abs(I_mA), j: Math.abs(jt), ndot: nd, ok: I_mA !== 0 && isFinite(I_mA) && isFinite(nd) && nd > 0 };
   }
-  /* per-row current: row j (or row I in Total-I mode), falling back to the global value */
+  /* per-row current: CA uses measured j/I; CP uses setpoint (or override on the row) */
   function rowCur(inj, c) {
     var A = pnum(S.area), jr, Ir;
-    if (S.imode === "j") { jr = isFinite(pnum(inj.j)) ? Math.abs(pnum(inj.j)) : c.j; Ir = jr * A; }
-    else { Ir = isFinite(pnum(inj.I)) ? Math.abs(pnum(inj.I)) : c.I_mA; jr = A > 0 ? Ir / A : NaN; }
-    return { j: jr, I_A: Ir / 1000, ok: c.ok && Ir > 0 && isFinite(Ir) };
+    if (S.technique === "CP") {
+      if (S.cpmode === "j") {
+        jr = isFinite(pnum(inj.j)) ? Math.abs(pnum(inj.j)) : (isFinite(pnum(S.jset)) ? Math.abs(pnum(S.jset)) : c.j);
+        Ir = jr * A;
+      } else {
+        Ir = isFinite(pnum(inj.I)) ? Math.abs(pnum(inj.I)) : (isFinite(pnum(S.Iset)) ? Math.abs(pnum(S.Iset)) : c.I_mA);
+        jr = A > 0 ? Ir / A : NaN;
+      }
+    } else if (S.imode === "j") {
+      jr = isFinite(pnum(inj.j)) ? Math.abs(pnum(inj.j)) : c.j; Ir = jr * A;
+    } else {
+      Ir = isFinite(pnum(inj.I)) ? Math.abs(pnum(inj.I)) : c.I_mA; jr = A > 0 ? Ir / A : NaN;
+    }
+    return { j: jr, I_A: Ir / 1000, ok: isFinite(Ir) && Ir > 0 && isFinite(c.ndot) && c.ndot > 0 && isFinite(A) };
+  }
+  function resolveE0() {
+    var key = S.eref || "agcl_sat", meta = EREF[key] || EREF.agcl_sat;
+    if (key === "custom") return { E0: pnum(S.E0), noPh: false, label: "Custom" };
+    return { E0: meta.E0, noPh: !!meta.noPh, label: meta.label };
+  }
+  function injEapplied(inj) {
+    if (S.technique === "CP") return isFinite(pnum(inj.E)) ? pnum(inj.E) : NaN;
+    return isFinite(pnum(inj.E)) ? pnum(inj.E) : pnum(S.Eset);
+  }
+  function computeIRRow(inj, rc) {
+    var Eapp = injEapplied(inj), I_A = rc.I_A, Ru = pnum(S.Ru), f = pnum(S.fComp);
+    if (!isFinite(f)) f = 0;
+    var ru = (isFinite(f) && f >= 100) ? 0 : ruUnc(Ru, f);
+    var Ec = eCorr(Eapp, I_A, Ru, f);
+    var T = S.ref === "std" ? 298.15 : pnum(S.T); /* for Nernst use entered T when custom; else 298.15 */
+    if (S.slopeMode === "nernst") T = pnum(S.T) || 298.15;
+    var slope = nernstSlope(S.slopeMode, T);
+    var ref = resolveE0(), pH = pnum(S.pH);
+    var Erhe = ref.noPh ? (isFinite(Ec) ? Ec : NaN) : eRhe(Ec, ref.E0, pH, slope, false);
+    return {
+      E_applied: Eapp, I_mA: rc.I_A * 1000, I_A: rc.I_A, j: rc.j,
+      Ru: Ru, fComp: f, Ru_unc: ru,
+      E_corr: Ec, E_RHE: Erhe, E0: ref.E0, slope: slope, refLabel: ref.label, noPh: ref.noPh
+    };
   }
   function isGas(p) { return (p.phase || "gas") !== "liquid"; }
   function compute(inj, c0) {
     var rc = rowCur(inj, c0), c = { ok: rc.ok, ndot: c0.ndot, I_A: rc.I_A, j: rc.j };
-    var out = { per: {}, total: 0, any: false, j: rc.j, I_mA: rc.I_A * 1000 };
+    var out = { per: {}, total: 0, any: false, j: rc.j, I_mA: rc.I_A * 1000, ir: computeIRRow(inj, rc) };
     S.products.forEach(function (p) {
       if (!isGas(p)) { out.per[p.id] = null; return; }
       var ppm = pnum(inj.ppm[p.id]);
@@ -1109,7 +1210,10 @@
       var cc = $("gc-c-" + k);
       if (cc) cc.innerHTML = S.imode === "j" ? "I <b>" + sig(r.I_mA, 4) + "</b> mA" : "j <b>" + sig(r.j, 4) + "</b> mA cm⁻²";
       var co = $("gc-cur-out-" + k);
-      if (co) co.innerHTML = S.imode === "j" ? "I <b>" + sig(r.I_mA, 4) + "</b> mA" : "j <b>" + sig(r.j, 4) + "</b> mA cm⁻²";
+      if (co) {
+        var ir = r.ir || {};
+        co.innerHTML = "E_corr <b>" + sig(ir.E_corr, 3) + "</b>" + (isFinite(ir.E_RHE) ? (" · RHE " + sig(ir.E_RHE, 3)) : "");
+      }
       var t = $("gc-it-" + k);
       if (t) { t.textContent = r.total == null ? "—" : "Σ " + sig(r.total, 3) + "%"; t.classList.toggle("warn", r.total > 100); }
       var b = $("gc-b-" + k); if (b) b.innerHTML = barSVG(r, 8);
@@ -1167,6 +1271,7 @@
     }
     $("gc-table").innerHTML = "<thead>" + head + "</thead><tbody>" + (rows || '<tr><td colspan="99" style="text-align:left">No data yet</td></tr>') + "</tbody>";
     renderChart(results, order, c, liqRes);
+    renderIRTable();
     GC._last = { c: c, results: results, order: order, liq: liqRes };
     save();
   }
@@ -1182,8 +1287,12 @@
     sigFigs: 5,
     columns: [
       { header: "t_inj (min)", field: "t" },
+      { header: "E_applied (V)", field: "Eapp" },
       { header: "j (mA cm^-2)", field: "j" },
       { header: "I (mA)", field: "I" },
+      { header: "Ru_unc (ohm)", field: "Ru_unc" },
+      { header: "E_corr_vs_ref (V)", field: "Ecorr" },
+      { header: "E_corr_vs_RHE (V)", field: "Erhe" },
       { header: "ppm_{p} (ppm)", field: "ppm", perProduct: true },
       { header: "FE_{p} (%)", field: "fe", perProduct: true },
       { header: "j_{p} (mA cm^-2)", field: "ji", perProduct: true },
@@ -1207,6 +1316,10 @@
         case "t": return pnum(o.v.t);
         case "j": return r.j;
         case "I": return r.I_mA;
+        case "Eapp": return r.ir ? r.ir.E_applied : NaN;
+        case "Ru_unc": return r.ir ? r.ir.Ru_unc : NaN;
+        case "Ecorr": return r.ir ? r.ir.E_corr : NaN;
+        case "Erhe": return r.ir ? r.ir.E_RHE : NaN;
         case "ppm": return pnum(o.v.ppm[col.p.id]);
         case "fe": return x ? x.fe : NaN;
         case "ji": return x ? x.j : NaN;
@@ -1227,9 +1340,36 @@
     return aoa;
   }
   function stamp() { return new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-"); }
+  function metaRows() {
+    var ref = resolveE0();
+    return [
+      ["technique", S.technique],
+      ["E_set (V)", S.Eset],
+      ["I_set (mA)", S.Iset],
+      ["j_set (mA cm^-2)", S.jset],
+      ["reference", ref.label],
+      ["E0_ref (V vs SHE)", ref.E0],
+      ["pH", S.pH],
+      ["slope_mode", S.slopeMode],
+      ["ir_mode", S.irMode],
+      ["Ru (ohm)", S.Ru],
+      ["f_comp (%)", S.fComp],
+      ["area (cm2)", S.area],
+      ["flow (sccm)", S.flow],
+      ["T (K)", S.T],
+      ["P (Pa)", S.P],
+      ["notes", S.notes || ""],
+      ["formula_E_corr", "E_corr = E_applied + |I|*Ru_unc  (cathodic; equiv. E_app - I_signed*Ru_unc)"],
+      ["formula_Ru_unc", "Ru_unc = Ru*(1 - f_comp/100); skip if f_comp = 100%"],
+      ["formula_E_RHE", "E_RHE = E_corr + E0_ref + slope*pH"]
+    ];
+  }
   function csv() {
-    var aoa = buildExport();
-    var lines = aoa.map(function (r) { return r.map(function (v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(","); });
+    var aoa = buildExport(), meta = metaRows();
+    var escCell = function (v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var lines = aoa.map(function (r) { return r.map(escCell).join(","); });
+    lines.push(""); lines.push("Meta / notes");
+    meta.forEach(function (r) { lines.push(r.map(escCell).join(",")); });
     GC._csv = lines;
     if (GC._nodl) return;
     dl(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }), EXPORT_TEMPLATE.fileStem + "_" + stamp() + ".csv");
@@ -1239,30 +1379,51 @@
     var aoa = buildExport(), ws = root.XLSX.utils.aoa_to_sheet(aoa), wb = root.XLSX.utils.book_new();
     ws["!cols"] = aoa[0].map(function (h) { return { wch: Math.max(10, String(h).length + 2) }; });
     root.XLSX.utils.book_append_sheet(wb, ws, EXPORT_TEMPLATE.sheetName);
+    var meta = metaRows(); meta.unshift(["field", "value"]);
+    root.XLSX.utils.book_append_sheet(wb, root.XLSX.utils.aoa_to_sheet(meta), "Meta_notes");
     GC._xlsxAoa = aoa;
     if (GC._nodl) { GC._xlsxB64 = root.XLSX.write(wb, { type: "base64", bookType: "xlsx" }); return; }
     var out = root.XLSX.write(wb, { type: "array", bookType: "xlsx" });
     dl(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), EXPORT_TEMPLATE.fileStem + "_" + stamp() + ".xlsx");
   }
-
   function syncControls() {
-    ["j", "area", "Itot", "flow", "T", "P"].forEach(function (k) { $("gc-" + k).value = S[k]; });
+    ["j", "area", "Itot", "flow", "T", "P", "Eset", "Iset", "jset", "E0", "pH", "Ru", "fComp"].forEach(function (k) {
+      var el = $("gc-" + k); if (el && S[k] != null) el.value = S[k];
+    });
+    var notes = $("gc-notes"); if (notes) notes.value = S.notes || "";
+    var eref = $("gc-eref"); if (eref) eref.value = S.eref || "agcl_sat";
+    var eref2 = $("gc-eref-cp"); if (eref2) eref2.value = S.eref || "agcl_sat";
     document.querySelectorAll("#gc-imode .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.imode); });
     document.querySelectorAll("#gc-ref .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.ref); });
+    document.querySelectorAll("#gc-tech .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.technique); });
+    document.querySelectorAll("#gc-cpmode .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.cpmode); });
+    document.querySelectorAll("#gc-irmode .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.irMode); });
+    document.querySelectorAll("#gc-slope .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.slopeMode); });
     document.querySelectorAll(".gc-j").forEach(function (e) { e.hidden = S.imode !== "j"; });
-    document.querySelector(".gc-i").hidden = S.imode !== "I";
-    if (S.imode === "I") $("gc-area").closest(".field").hidden = false;
+    var gi = document.querySelector(".gc-i"); if (gi) gi.hidden = S.imode !== "I";
     document.querySelectorAll(".gc-tp").forEach(function (e) { e.hidden = S.ref === "std"; });
+    document.querySelectorAll(".gc-ca-only").forEach(function (e) { e.hidden = S.technique === "CP"; });
+    document.querySelectorAll(".gc-cp-only").forEach(function (e) { e.hidden = S.technique !== "CP"; });
+    document.querySelectorAll(".gc-cp-I").forEach(function (e) { e.hidden = S.cpmode !== "I"; });
+    document.querySelectorAll(".gc-cp-j").forEach(function (e) { e.hidden = S.cpmode !== "j"; });
+    document.querySelectorAll(".gc-e0-custom").forEach(function (e) { e.hidden = S.eref !== "custom"; });
+    var help = $("gc-tech-help");
+    if (help) help.textContent = S.technique === "CP"
+      ? "CP: apply a fixed current; measure potential at each GC injection."
+      : "CA: apply a fixed potential; measure current at each GC injection.";
   }
   function syncSched() { ["t1", "ana", "post", "count"].forEach(function (f) { $("gc-s-" + f).value = S.sched[f]; }); }
   /* —— Guided / Expert UI —— */
   var UI_KEY = "gcfe.uiMode";
   var WIZ_HINTS = {
-    1: "Set electrode area and CO₂ flow. These convert ppm into moles and FE.",
-    2: "Enter GC timing so injection times fill automatically.",
-    3: "Read |j| or |I| from the chrono plot at each injection time.",
-    4: "Confirm products, then enter GC ppm (and liquid μM / Q if needed).",
-    5: "Review FE, partial current densities, chart, and export."
+    1: "Choose CA (fix E, measure I) or CP (fix I, measure E).",
+    2: "Enter measured electrolyte pH for RHE conversion (optional).",
+    3: "Pick iR mode and enter Ru / % compensated (Faraday correction).",
+    4: "Geometric area, CO₂ flow, and T/P for molar flow.",
+    5: "GC timing — injection times fill automatically.",
+    6: "Read chrono values at each injection time from the plot.",
+    7: "Confirm products and enter GC ppm (and liquid μM / Q).",
+    8: "Review FE, iR-corrected potentials, chart, notes, and export."
   };
   function getUiMode() {
     try { return localStorage.getItem(UI_KEY) || "guided"; } catch (e) { return "guided"; }
@@ -1277,7 +1438,7 @@
     if (m === "guided") setWizStep(parseInt(sec.getAttribute("data-wiz-step"), 10) || 1);
   }
   function setWizStep(n) {
-    n = Math.max(1, Math.min(5, n | 0));
+    n = Math.max(1, Math.min(8, n | 0));
     var sec = $("section-gc"); if (!sec) return;
     sec.setAttribute("data-wiz-step", String(n));
     document.querySelectorAll("#gc-wiz-progress li").forEach(function (li) {
@@ -1288,11 +1449,11 @@
     var h = $("gc-wiz-step-hint"); if (h) h.textContent = WIZ_HINTS[n] || "";
     var back = $("gc-wiz-back"), next = $("gc-wiz-next");
     if (back) back.disabled = n <= 1;
-    if (next) next.textContent = n >= 5 ? "Open Expert view" : "Next";
+    if (next) next.textContent = n >= 8 ? "Open Expert view" : "Next";
     renderSchedPreview();
     renderCurrentStep();
-    var w = $("gc-wiz-warn"); if (w && n !== 5) { w.hidden = true; w.textContent = ""; }
-    if (n === 5) validateWizStep(5, true);
+    var w = $("gc-wiz-warn"); if (w && n !== 8) { w.hidden = true; w.textContent = ""; }
+    if (n === 8) validateWizStep(8, true);
     try { sec.querySelector(".gc-wizard").scrollIntoView({ block: "nearest" }); } catch (e) {}
   }
   function renderSchedPreview() {
@@ -1304,36 +1465,74 @@
   function renderCurrentStep() {
     var box = $("gc-current-step"); if (!box) return;
     applySched();
-    var useJ = S.imode === "j";
+    var ca = S.technique !== "CP";
+    var desc = $("gc-chrono-desc");
+    if (desc) desc.textContent = ca
+      ? "CA: enter measured |j| or |I| from the chronoamperogram at each injection. E is the applied setpoint."
+      : "CP: enter measured E (V vs ref) from the chronopotentiogram. Current is prefilled from the setpoint.";
+    var useJ = S.imode === "j" || (S.technique === "CP" && S.cpmode === "j");
     box.innerHTML = S.inj.map(function (inj, k) {
-      return '<div class="gc-cur-row" data-k="' + k + '"><span class="gc-cur-row__t">t=' + esc(inj.t || "?") + "</span>" +
-        (useJ
+      var cur;
+      if (ca) {
+        cur = useJ
           ? '<label class="field" style="margin:0"><span class="field__label">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="' + esc(S.j) + '"></label>'
-          : '<label class="field" style="margin:0"><span class="field__label">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"></label>') +
+          : '<label class="field" style="margin:0"><span class="field__label">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"></label>';
+        cur += '<span class="gc-cell__out">E<sub>app</sub> ' + esc(S.Eset || "—") + " V</span>";
+      } else {
+        var phJ = S.cpmode === "j" ? esc(S.jset) : esc(S.Iset);
+        var lab = S.cpmode === "j" ? "|j| set" : "|I| set";
+        cur = '<label class="field" style="margin:0"><span class="field__label">E (V vs ref)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="E" value="' + esc(inj.E == null ? "" : inj.E) + '" placeholder="' + esc(S.Eset) + '"></label>' +
+          '<span class="gc-cell__out">' + lab + " " + phJ + "</span>";
+      }
+      return '<div class="gc-cur-row" data-k="' + k + '"><span class="gc-cur-row__t">t=' + esc(inj.t || "?") + "</span>" + cur +
         '<span class="gc-cell__out" id="gc-cur-out-' + k + '">—</span></div>';
-    }).join("") + '<p class="gc-hint">Blank cells use the step‑1 default (' + (useJ ? ("|j|=" + esc(S.j) + " mA cm⁻²") : ("|I|=" + esc(S.Itot) + " mA")) + ").</p>";
+    }).join("");
+    renderIRTable();
+  }
+  function renderIRTable() {
+    var tbl = $("gc-ir-table"); if (!tbl) return;
+    var c = cond(), rows = "", er = [], rr = [];
+    S.inj.forEach(function (inj, k) {
+      var rc = rowCur(inj, c), ir = computeIRRow(inj, rc);
+      if (isFinite(ir.E_corr)) er.push(ir.E_corr);
+      if (isFinite(ir.E_RHE)) rr.push(ir.E_RHE);
+      rows += "<tr><td>" + esc(inj.t) + "</td><td>" + sig(ir.E_applied, 4) + "</td><td>" + sig(ir.I_mA, 4) + "</td><td>" + sig(ir.Ru_unc, 4) + "</td><td>" + sig(ir.E_corr, 4) + "</td><td>" + (isFinite(ir.E_RHE) ? sig(ir.E_RHE, 4) : "—") + "</td></tr>";
+    });
+    var em = mstat(er), rm = mstat(rr);
+    tbl.querySelector("thead").innerHTML = "<tr><th>t (min)</th><th>E_app (V)</th><th>|I| (mA)</th><th>Ru_unc (Ω)</th><th>E_corr vs ref</th><th>E_corr vs RHE</th></tr>";
+    tbl.querySelector("tbody").innerHTML = rows +
+      (er.length ? '<tr class="avg"><td>mean ± SD</td><td></td><td></td><td></td><td>' + pm(em, 4) + "</td><td>" + (rr.length ? pm(rm, 4) : "—") + "</td></tr>" : "");
+    var sum = $("gc-ir-summary");
+    if (sum) sum.textContent = "At each GC injection, E_corr = E_applied − I·Ru_uncorrected (cathodic I negative), then convert to RHE with the chosen reference and measured pH.";
   }
   function validateWizStep(n, soft) {
     var warn = $("gc-wiz-warn"), msg = "";
     if (n === 1) {
+      if (S.technique === "CA" && !isFinite(pnum(S.Eset))) msg = "Enter the applied potential E for CA.";
+      else if (S.technique === "CP" && S.cpmode === "I" && !(pnum(S.Iset) > 0)) msg = "Enter the applied |I| for CP.";
+      else if (S.technique === "CP" && S.cpmode === "j" && !(pnum(S.jset) > 0)) msg = "Enter the applied |j| for CP.";
+    } else if (n === 3) {
+      var f = pnum(S.fComp); if (!isFinite(f)) f = 0;
+      if (f < 100 && !(pnum(S.Ru) >= 0 && isFinite(pnum(S.Ru)))) msg = "Enter Ru (Ω), or set % compensated to 100 to skip iR correction.";
+    } else if (n === 4) {
       if (!(pnum(S.area) > 0)) msg = "Enter a geometric area greater than 0 cm².";
       else if (!(pnum(S.flow) > 0)) msg = "Enter a CO₂ flow greater than 0 sccm.";
-      else if (S.ref === "custom" && (!(pnum(S.T) > 0) || !(pnum(S.P) > 0))) msg = "Custom reference needs T > 0 K and P > 0 Pa.";
-    } else if (n === 2) {
+    } else if (n === 5) {
       if (!isFinite(pnum(S.sched.t1))) msg = "Enter the time of the first injection (min).";
       else if (!isFinite(pnum(S.sched.ana)) || pnum(S.sched.ana) < 0) msg = "Enter GC analysis time (min).";
       else if (!isFinite(pnum(S.sched.post)) || pnum(S.sched.post) < 0) msg = "Enter post-run time (min).";
-      else if (!(parseInt(S.sched.count, 10) >= 1)) msg = "Choose 1–6 injections.";
-    } else if (n === 3) {
-      var c = cond(), ok = S.inj.some(function (inj) { return rowCur(inj, c).ok; });
-      if (!ok) msg = "Enter |j| or |I| for at least one injection (or set a default in step 1).";
-    } else if (n === 4) {
+    } else if (n === 6) {
+      var c = cond(), ok = false;
+      if (S.technique === "CP") ok = S.inj.some(function (inj) { return isFinite(pnum(inj.E)); });
+      else ok = S.inj.some(function (inj) { return rowCur(inj, c).ok; });
+      if (!ok) msg = S.technique === "CP" ? "Enter measured E for at least one injection." : "Enter measured |j| or |I| for at least one injection.";
+    } else if (n === 7) {
       var anyPpm = S.inj.some(function (inj) {
         return S.products.some(function (p) { return isGas(p) && isFinite(pnum(inj.ppm[p.id])); });
       });
       var anyLiq = Object.keys(computeLiquid(cond())).length > 0;
       if (!anyPpm && !anyLiq) msg = "Enter at least one GC ppm (or liquid concentration) to calculate FE.";
-    } else if (n === 5) {
+    } else if (n === 8) {
       var L = GC._last;
       if (L && L.results) {
         var last = null;
@@ -1341,7 +1540,6 @@
         if (last && isFinite(last.total)) {
           if (last.total > 110) msg = "Σ FE is " + sig(last.total, 3) + "% (>110%). Check flow, current, or GC calibration.";
           else if (last.total < 80) msg = "Σ FE is " + sig(last.total, 3) + "% (<80%). Liquid products or losses may be missing — that can be normal.";
-          else if (Math.abs(last.total - 100) > 15) msg = "Σ FE is " + sig(last.total, 3) + "% (away from 100%). Worth a quick check of inputs.";
         }
       }
     }
@@ -1396,17 +1594,43 @@
     });
     if (wizNext) wizNext.addEventListener("click", function () {
       var n = parseInt($("section-gc").getAttribute("data-wiz-step"), 10) || 1;
-      if (n >= 5) { setUiMode("expert"); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+      if (n >= 8) { setUiMode("expert"); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
       if (!validateWizStep(n, false)) return;
       setWizStep(n + 1);
     });
     var curBox = $("gc-current-step");
     if (curBox) curBox.addEventListener("input", function (e) {
       var k = e.target.dataset.ik; if (k == null) return;
-      var f = e.target.dataset.f; if (f === "j" || f === "I") { S.inj[k][f] = e.target.value; renderInj(); update(); }
+      var f = e.target.dataset.f; if (f === "j" || f === "I" || f === "E") { S.inj[k][f] = e.target.value; renderInj(); update(); renderIRTable(); }
     });
-    ["j", "area", "Itot", "flow", "T", "P"].forEach(function (k) { $("gc-" + k).addEventListener("input", function (e) { S[k] = e.target.value; if (k === "j" || k === "Itot") document.querySelectorAll('[data-f="' + (k === "j" ? "j" : "I") + '"]').forEach(function (i) { i.placeholder = S[k]; }); renderCurrentStep(); update(); }); });
-    $("gc-imode").addEventListener("click", function (e) { var b = e.target.closest(".seg__btn"); if (b) { S.imode = b.dataset.v; syncControls(); renderInj(); renderCurrentStep(); update(); } });
+    function bindVal(id, key, cb) {
+      var el = $(id); if (!el) return;
+      el.addEventListener("input", function (e) { S[key] = e.target.value; if (cb) cb(); else { syncControls(); renderCurrentStep(); update(); } });
+      el.addEventListener("change", function (e) { S[key] = e.target.value; if (cb) cb(); else { syncControls(); renderCurrentStep(); update(); } });
+    }
+    ["j", "area", "Itot", "flow", "T", "P", "Eset", "Iset", "jset", "E0", "pH", "Ru", "fComp"].forEach(function (k) {
+      bindVal("gc-" + k, k, function () {
+        if (k === "j" || k === "Itot") document.querySelectorAll('[data-f="' + (k === "j" ? "j" : "I") + '"]').forEach(function (i) { i.placeholder = S[k]; });
+        renderCurrentStep(); update();
+      });
+    });
+    bindVal("gc-notes", "notes", function () { save(); });
+    ["gc-eref", "gc-eref-cp"].forEach(function (id) {
+      var el = $(id); if (!el) return;
+      el.addEventListener("change", function (e) { S.eref = e.target.value; syncControls(); renderCurrentStep(); update(); });
+    });
+    function segBind(id, key) {
+      var el = $(id); if (!el) return;
+      el.addEventListener("click", function (e) {
+        var b = e.target.closest(".seg__btn"); if (!b) return;
+        S[key] = b.dataset.v; syncControls(); renderInj(); renderCurrentStep(); update();
+      });
+    }
+    segBind("gc-imode", "imode");
+    segBind("gc-tech", "technique");
+    segBind("gc-cpmode", "cpmode");
+    segBind("gc-irmode", "irMode");
+    segBind("gc-slope", "slopeMode");
     $("gc-ref").addEventListener("click", function (e) { var b = e.target.closest(".seg__btn"); if (b) { S.ref = b.dataset.v; syncControls(); update(); } });
     function addProduct(p) {
       if (p === "custom") {
