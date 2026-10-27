@@ -621,20 +621,66 @@
 (function (root) {
   "use strict";
   var R = 8.314462618, F = 96485.33212;
+  /* Product catalog from Steve's analysis workbook (Ne = 4·C + H − 2·O; AJ38=4, AJ39=1, AJ40=−2).
+     phase: "gas" (GC ppm) | "liquid" (HPLC/HSGC μM). detector noted for legend/UI. */
   var PRESETS = {
-    H2: { name: "H2", label: "H₂", n: 2, color: "var(--chip-h2)", hex: "#3b82c4" },
-    CO: { name: "CO", label: "CO", n: 2, color: "var(--chip-co)", hex: "#f28c28" },
-    CH4: { name: "CH4", label: "CH₄", n: 8, color: "var(--chip-ch4)", hex: "#2f9e6e" },
-    C2H4: { name: "C2H4", label: "C₂H₄", n: 12, color: "var(--chip-c2h4)", hex: "#8b5cf6" }
+    H2: { name: "H2", label: "H₂", formula: "H2", n: 2, phase: "gas", detector: "GC", hex: "#3b82c4" },
+    CO: { name: "CO", label: "CO", formula: "CO", n: 2, phase: "gas", detector: "GC", hex: "#f28c28" },
+    CH4: { name: "CH4", label: "CH₄", formula: "CH4", n: 8, phase: "gas", detector: "GC", hex: "#2f9e6e" },
+    C2H4: { name: "C2H4", label: "C₂H₄", formula: "C2H4", n: 12, phase: "gas", detector: "GC", hex: "#8b5cf6" },
+    C2H6: { name: "C2H6", label: "C₂H₆", formula: "C2H6", n: 14, phase: "gas", detector: "GC", hex: "#0891b2" },
+    C3H8: { name: "C3H8", label: "C₃H₈", formula: "C3H8", n: 20, phase: "gas", detector: "GC", hex: "#a16207" },
+    C3H6: { name: "C3H6", label: "C₃H₆", formula: "C3H6", n: 18, phase: "gas", detector: "GC", hex: "#16a34a" },
+    iC4H10: { name: "Isobutane", label: "i-C₄H₁₀", formula: "C4H10", n: 26, phase: "gas", detector: "GC", hex: "#db2777" },
+    nC4H10: { name: "n-Butane", label: "n-C₄H₁₀", formula: "C4H10", n: 26, phase: "gas", detector: "GC", hex: "#e11d48" },
+    t2C4H8: { name: "trans-2-Butene", label: "t-2-C₄H₈", formula: "C4H8", n: 24, phase: "gas", detector: "GC", hex: "#2563eb" },
+    "1C4H8": { name: "1-Butene", label: "1-C₄H₈", formula: "C4H8", n: 24, phase: "gas", detector: "GC", hex: "#9333ea" },
+    iC4H8: { name: "Isobutene", label: "i-C₄H₈", formula: "C4H8", n: 24, phase: "gas", detector: "GC", hex: "#ea580c" },
+    c2C4H8: { name: "cis-2-Butene", label: "c-2-C₄H₈", formula: "C4H8", n: 24, phase: "gas", detector: "GC", hex: "#0d9488" },
+    iC5H12: { name: "Isopentane", label: "i-C₅H₁₂", formula: "C5H12", n: 32, phase: "gas", detector: "GC", hex: "#ca8a04" },
+    nC5H12: { name: "n-Pentane", label: "n-C₅H₁₂", formula: "C5H12", n: 32, phase: "gas", detector: "GC", hex: "#475569" },
+    C4H6: { name: "1,3-Butadiene", label: "1,3-C₄H₆", formula: "C4H6", n: 22, phase: "gas", detector: "GC", hex: "#be185d" },
+    t2C5H10: { name: "trans-2-Pentene", label: "t-2-C₅H₁₀", formula: "C5H10", n: 30, phase: "gas", detector: "GC", hex: "#1d4ed8" },
+    "2Me2C4": { name: "2-Methyl-2-butene", label: "2-Me-2-C₄", formula: "C5H10", n: 30, phase: "gas", detector: "GC", hex: "#15803d" },
+    "1C5H10": { name: "1-Pentene", label: "1-C₅H₁₀", formula: "C5H10", n: 30, phase: "gas", detector: "GC", hex: "#7c3aed" },
+    c2C5H10: { name: "cis-2-Pentene", label: "c-2-C₅H₁₀", formula: "C5H10", n: 30, phase: "gas", detector: "GC", hex: "#c2410c" },
+    C6H14: { name: "Hexane", label: "C₆H₁₄", formula: "C6H14", n: 38, phase: "gas", detector: "GC", hex: "#0f766e" },
+    "1C6H12": { name: "1-Hexene", label: "1-C₆H₁₂", formula: "C6H12", n: 36, phase: "gas", detector: "GC", hex: "#854d0e" },
+    c2C6H12: { name: "c-2-Hexene", label: "c-2-C₆H₁₂", formula: "C6H12", n: 36, phase: "gas", detector: "GC", hex: "#334155" },
+    t2C6H12: { name: "t-2-Hexene", label: "t-2-C₆H₁₂", formula: "C6H12", n: 36, phase: "gas", detector: "GC", hex: "#9f1239" },
+    HCOO: { name: "Formate", label: "HCOO⁻", formula: "CH2O2", n: 2, phase: "liquid", detector: "HPLC", hex: "#f59e0b" },
+    AcO: { name: "Acetate", label: "AcO⁻", formula: "C2H4O2", n: 8, phase: "liquid", detector: "HPLC", hex: "#14b8a6" },
+    MeCHO: { name: "Acetaldehyde", label: "MeCHO", formula: "C2H4O", n: 10, phase: "liquid", detector: "HSGC", hex: "#f43f5e" },
+    EtCHO: { name: "Propionaldehyde", label: "EtCHO", formula: "C3H6O", n: 16, phase: "liquid", detector: "HSGC", hex: "#6366f1" },
+    Me2CO: { name: "Acetone", label: "Me₂CO", formula: "C3H6O", n: 16, phase: "liquid", detector: "HSGC", hex: "#84cc16" },
+    BuCHO: { name: "Butanal", label: "BuCHO", formula: "C4H8O", n: 22, phase: "liquid", detector: "HSGC", hex: "#06b6d4" },
+    MeOH: { name: "Methanol", label: "MeOH", formula: "CH4O", n: 6, phase: "liquid", detector: "HSGC", hex: "#d946ef" },
+    iPrOH: { name: "Isopropanol", label: "i-PrOH", formula: "C3H8O", n: 18, phase: "liquid", detector: "HSGC", hex: "#f97316" },
+    EtOH: { name: "Ethanol", label: "EtOH", formula: "C2H6O", n: 12, phase: "liquid", detector: "HSGC", hex: "#64748b" },
+    PeCHO: { name: "Pentanal", label: "PeCHO", formula: "C5H10O", n: 28, phase: "liquid", detector: "HSGC", hex: "#1e40af" },
+    nPrOH: { name: "n-Propanol", label: "n-PrOH", formula: "C3H8O", n: 18, phase: "liquid", detector: "HSGC", hex: "#166534" },
+    AllylOH: { name: "Allyl Alcohol", label: "AllylOH", formula: "C3H6O", n: 16, phase: "liquid", detector: "HSGC", hex: "#6d28d9" },
+    "1BuOH": { name: "1-Butanol", label: "1-BuOH", formula: "C4H10O", n: 24, phase: "liquid", detector: "HSGC", hex: "#9a3412" },
+    "2Me1BuOH": { name: "2-Methyl-1-Butanol", label: "2-Me-1-BuOH", formula: "C5H12O", n: 30, phase: "liquid", detector: "HSGC", hex: "#115e59" },
+    PeOH: { name: "Pentanol", label: "PeOH", formula: "C5H12O", n: 30, phase: "liquid", detector: "HSGC", hex: "#1e293b" },
+    "1HexOH": { name: "1-Hexanol", label: "1-HexOH", formula: "C6H14O", n: 36, phase: "liquid", detector: "HSGC", hex: "#b45309" }
   };
-  var CUSTOM_HEX = ["#64748b", "#db2777", "#0891b2", "#a16207"];
+  var CUSTOM_HEX = ["#64748b", "#db2777", "#0891b2", "#a16207", "#6366f1", "#14b8a6"];
+  var PRESET_ORDER = ["H2","CO","CH4","C2H4","C2H6","C3H8","C3H6","iC4H10","nC4H10","t2C4H8","1C4H8","iC4H8","c2C4H8","iC5H12","nC5H12","C4H6","t2C5H10","2Me2C4","1C5H10","c2C5H10","C6H14","1C6H12","c2C6H12","t2C6H12","HCOO","AcO","MeCHO","EtCHO","Me2CO","BuCHO","MeOH","iPrOH","EtOH","PeCHO","nPrOH","AllylOH","1BuOH","2Me1BuOH","PeOH","1HexOH"];
 
   /* Pure math (also used by node tests) */
   function molarFlow(flow_mL_min, T, P) { return P * (flow_mL_min * 1e-6 / 60) / (R * T); }
   function fe(ppm, n, ndotGas, I_A) { return n * F * (ppm * 1e-6) * ndotGas / I_A * 100; }
+  /* Liquid FE from sheet: Q_i = (c_μM/10^6)·(V_mL/10^3)·Ne·F ; FE = (Q_WE + Q_CE)/Q_total·100.
+     Matches rows 28–30 of Steve's workbook. */
+  function feLiquid(c_we_uM, c_ce_uM, Vw_mL, Vc_mL, n, Q_C) {
+    var qw = (c_we_uM / 1e6) * (Vw_mL / 1e3) * n * F;
+    var qc = (c_ce_uM / 1e6) * (Vc_mL / 1e3) * n * F;
+    return (qw + qc) / Q_C * 100;
+  }
   /* t_k = t_1 + (k-1)·(t_analysis + t_post); k is 0-based here */
   function schedTime(k, sc) { var p = function (v) { return parseFloat(String(v).replace(",", ".")); }; return p(sc.t1) + k * (p(sc.ana) + p(sc.post)); }
-  var GC = { R: R, F: F, molarFlow: molarFlow, fe: fe, schedTime: schedTime };
+  var GC = { R: R, F: F, molarFlow: molarFlow, fe: fe, feLiquid: feLiquid, schedTime: schedTime };
   if (typeof module !== "undefined" && module.exports) { module.exports = GC; return; }
   root.GCFE = GC;
 
@@ -650,11 +696,16 @@
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 
   var KEY = "gcfe.v1";
+  function prodFromPreset(id) {
+    var P = PRESETS[id];
+    return { id: id, name: P.name, label: P.label, formula: P.formula, n: P.n, phase: P.phase, detector: P.detector, hex: P.hex };
+  }
   function defaults() {
     return {
       imode: "j", j: "100", area: "1", Itot: "100", flow: "20", ref: "std", T: "298.15", P: "101325",
-      products: [{ id: "H2", name: "H2", label: "H₂", n: 2, hex: PRESETS.H2.hex }, { id: "CO", name: "CO", label: "CO", n: 2, hex: PRESETS.CO.hex },
-        { id: "CH4", name: "CH4", label: "CH₄", n: 8, hex: PRESETS.CH4.hex }, { id: "C2H4", name: "C2H4", label: "C₂H₄", n: 12, hex: PRESETS.C2H4.hex }],
+      Q: "", Vw: "15", Vc: "15",
+      liq: {},
+      products: ["H2", "CO", "CH4", "C2H4"].map(prodFromPreset),
       sched: { t1: "15", ana: "12", post: "3", count: 4 },
       inj: [{ ppm: {} }, { ppm: {} }, { ppm: {} }, { ppm: {} }]
     };
@@ -670,6 +721,16 @@
   }
   function migrate() {
     if (!S.sched) S.sched = { t1: "15", ana: "12", post: "3", count: S.inj.length || 4 };
+    if (!S.liq) S.liq = {};
+    if (S.Q == null) S.Q = "";
+    if (S.Vw == null) S.Vw = "15";
+    if (S.Vc == null) S.Vc = "15";
+    S.products.forEach(function (p) {
+      if (!p.phase) p.phase = (PRESETS[p.id] && PRESETS[p.id].phase) || "gas";
+      if (!p.detector && PRESETS[p.id]) p.detector = PRESETS[p.id].detector;
+      if (!p.formula && PRESETS[p.id]) p.formula = PRESETS[p.id].formula;
+      if (p.phase === "liquid" && !S.liq[p.id]) S.liq[p.id] = { we: "", ce: "" };
+    });
     S.inj.forEach(function (r) { if (r.t != null && r.manual == null) r.manual = false; });
     applySched();
   }
@@ -696,10 +757,12 @@
     else { Ir = isFinite(pnum(inj.I)) ? Math.abs(pnum(inj.I)) : c.I_mA; jr = A > 0 ? Ir / A : NaN; }
     return { j: jr, I_A: Ir / 1000, ok: c.ok && Ir > 0 && isFinite(Ir) };
   }
+  function isGas(p) { return (p.phase || "gas") !== "liquid"; }
   function compute(inj, c0) {
     var rc = rowCur(inj, c0), c = { ok: rc.ok, ndot: c0.ndot, I_A: rc.I_A, j: rc.j };
     var out = { per: {}, total: 0, any: false, j: rc.j, I_mA: rc.I_A * 1000 };
     S.products.forEach(function (p) {
+      if (!isGas(p)) { out.per[p.id] = null; return; }
       var ppm = pnum(inj.ppm[p.id]);
       if (!isFinite(ppm) || !c.ok) { out.per[p.id] = null; return; }
       var f = fe(ppm, p.n, c.ndot, c.I_A);
@@ -710,9 +773,24 @@
     out.jtot = out.any ? out.total / 100 * rc.j : null;
     return out;
   }
+  /* Liquid FE (sheet rows 28–30): experiment-level, not per injection. j_i = FE/100 · |j|. */
+  function computeLiquid(c) {
+    var Q = pnum(S.Q), Vw = pnum(S.Vw), Vc = pnum(S.Vc), out = {}, ok = Q > 0 && isFinite(Q) && isFinite(Vw) && isFinite(Vc);
+    S.products.forEach(function (p) {
+      if (isGas(p)) return;
+      var slot = S.liq[p.id] || {}, we = pnum(slot.we), ce = pnum(slot.ce);
+      if (!ok || (!isFinite(we) && !isFinite(ce))) return;
+      if (!isFinite(we)) we = 0; if (!isFinite(ce)) ce = 0;
+      if (we === 0 && ce === 0) return;
+      var f = feLiquid(we, ce, Vw, Vc, p.n, Q);
+      out[p.id] = { fe: f, j: f / 100 * c.j };
+    });
+    return out;
+  }
   function barSVG(res, h) {
     var x = 0, s = "";
     S.products.forEach(function (p) {
+      if (!isGas(p)) return;
       var r = res.per[p.id]; if (!r) return;
       var w = Math.max(0, Math.min(r.fe, 100 - x)); if (w <= 0) return;
       s += '<rect x="' + x + '" y="0" width="' + w + '" height="' + h + '" fill="' + p.hex + '"/>'; x += w;
@@ -741,69 +819,148 @@
   }
   GC.mstat = mstat;
   function pm(s, d) { return sig(s.m, d) + (isFinite(s.sd) ? " ± " + sig(s.sd, 2) : ""); }
-  function renderChart(results, order, c) {
+  function renderChart(results, order, c, liqRes) {
     var el = $("gc-chart"); if (!el) return;
+    liqRes = liqRes || {};
     var data = order.filter(function (o) { return results[o.i].any; }).map(function (o) { return { t: o.v.t, r: results[o.i] }; });
     var isFE = chartMode === "fe", key = isFE ? "fe" : "j";
+    var dual = isFE; /* FE bars (left) + j_i lines (right) */
     var avg = chartView === "avg" && data.length > 0, xTitle = "Injection time (min)";
     if (avg) {
       var ag = aggregate(data, c);
+      /* Fold liquid products into the mean stack (experiment-level FE from sheet). */
+      Object.keys(liqRes).forEach(function (id) {
+        var L = liqRes[id]; if (!L || !isFinite(L.fe)) return;
+        ag.per[id] = { fe: L.fe, j: L.j, sd_fe: NaN, sd_j: NaN, n: 1 };
+        ag.tot.fe.m = (isFinite(ag.tot.fe.m) ? ag.tot.fe.m : 0) + L.fe;
+        ag.tot.j.m = (isFinite(ag.tot.j.m) ? ag.tot.j.m : 0) + L.j;
+      });
       xTitle = "Average of " + data.length + " injection" + (data.length > 1 ? "s" : "") + " (" + data.map(function (d) { return esc(d.t); }).join(", ") + " min)";
       data = [{ t: "Mean (n = " + data.length + ")", r: ag }];
     }
-    var maxT = 0;
+    var present = S.products.filter(function (p) {
+      return data.some(function (d) { var x = d.r.per[p.id]; return x && x[key] > 0; });
+    });
+    if (!present.length) present = S.products.filter(function (p) {
+      return data.some(function (d) { var x = d.r.per[p.id]; return x && (x.fe > 0 || x.j > 0); });
+    });
+    var maxFE = 0, maxJ = 0;
     data.forEach(function (d) {
       var s = 0, top = 0;
-      S.products.forEach(function (p) { var x = d.r.per[p.id]; if (x && x[key] > 0) { s += x[key]; if (avg && isFinite(x["sd_" + key])) top = Math.max(top, s + x["sd_" + key]); } });
-      if (avg) { var ts = d.r.tot[key]; s = Math.max(s, top, ts.m + (isFinite(ts.sd) ? ts.sd : 0)); }
-      maxT = Math.max(maxT, s);
+      S.products.forEach(function (p) {
+        var x = d.r.per[p.id]; if (!x) return;
+        if (x.fe > 0) { s += x.fe; if (avg && isFinite(x.sd_fe)) top = Math.max(top, s + x.sd_fe); }
+        if (x.j > 0) maxJ = Math.max(maxJ, x.j + (avg && isFinite(x.sd_j) ? x.sd_j : 0));
+      });
+      if (avg && d.r.tot) {
+        var ts = d.r.tot.fe; s = Math.max(s, top, ts.m + (isFinite(ts.sd) ? ts.sd : 0));
+      }
+      maxFE = Math.max(maxFE, s);
+      if (!isFE) {
+        var sj = 0, topj = 0;
+        S.products.forEach(function (p) { var x = d.r.per[p.id]; if (x && x.j > 0) { sj += x.j; if (avg && isFinite(x.sd_j)) topj = Math.max(topj, sj + x.sd_j); } });
+        maxFE = Math.max(maxFE, sj, topj); /* reuse maxFE as bar max when j-mode */
+      }
     });
-    var ref = isFE ? 100 : c.j;
-    var ymax = isFE ? Math.max(100, Math.ceil(maxT * 1.04 / 10) * 10) : nice(Math.max(maxT, ref || 0, 1e-9) * 1.08);
-    var W = 360, H = 250, L = 46, Rm = 10, T = 18, B = 42, pw = W - L - Rm, ph = H - T - B;
-    var y = function (v) { return T + ph - v / ymax * ph; };
-    var step = isFE ? (ymax > 150 ? 50 : 20) : ymax / 5, g = "";
-    for (var v = 0; v <= ymax + 1e-9; v += step) {
-      g += '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="#d8dee6" stroke-width="0.6"/>' +
-        '<text x="' + (L - 5) + '" y="' + (y(v) + 3.5) + '" text-anchor="end" font-size="10" fill="#3d4a5c">' + (Math.abs(v - Math.round(v)) < 1e-9 ? Math.round(v) : sig(v, 3)) + "</text>";
+    var ymaxL = isFE ? Math.max(100, Math.ceil(maxFE * 1.04 / 10) * 10) : nice(Math.max(maxFE, c.j || 0, 1e-9) * 1.08);
+    var ymaxR = nice(Math.max(maxJ, 1e-9) * 1.15);
+    var W = 360, H = dual ? 268 : 250, L = 46, Rm = dual ? 44 : 10, T = 18, B = 46, pw = W - L - Rm, ph = H - T - B;
+    var yL = function (v) { return T + ph - v / ymaxL * ph; };
+    var yR = function (v) { return T + ph - v / ymaxR * ph; };
+    var yBar = isFE ? yL : yL;
+    var stepL = isFE ? (ymaxL > 150 ? 50 : 20) : ymaxL / 5, g = "";
+    for (var v = 0; v <= ymaxL + 1e-9; v += stepL) {
+      g += '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + yL(v) + '" y2="' + yL(v) + '" stroke="#d8dee6" stroke-width="0.6"/>' +
+        '<text x="' + (L - 5) + '" y="' + (yL(v) + 3.5) + '" text-anchor="end" font-size="10" fill="#3d4a5c">' + (Math.abs(v - Math.round(v)) < 1e-9 ? Math.round(v) : sig(v, 3)) + "</text>";
     }
-    function whisk(x, lo, hi, w, col) {
-      return '<g stroke="' + col + '" stroke-width="1.3"><line x1="' + x + '" x2="' + x + '" y1="' + y(Math.max(lo, 0)) + '" y2="' + y(hi) + '"/>' +
-        '<line x1="' + (x - w) + '" x2="' + (x + w) + '" y1="' + y(hi) + '" y2="' + y(hi) + '"/><line x1="' + (x - w) + '" x2="' + (x + w) + '" y1="' + y(Math.max(lo, 0)) + '" y2="' + y(Math.max(lo, 0)) + '"/></g>';
+    var gR = "";
+    if (dual) {
+      var stepR = ymaxR / 5;
+      for (var vr = 0; vr <= ymaxR + 1e-9; vr += stepR) {
+        gR += '<text x="' + (W - Rm + 5) + '" y="' + (yR(vr) + 3.5) + '" text-anchor="start" font-size="10" fill="#3d4a5c">' + (Math.abs(vr - Math.round(vr)) < 1e-9 ? Math.round(vr) : sig(vr, 3)) + "</text>";
+      }
     }
-    var n = Math.max(data.length, 1), slot = pw / n, bw = avg ? 96 : Math.min(46, slot * 0.62), bars = "", errs = "";
+    function whisk(x, lo, hi, w, col, yfn) {
+      yfn = yfn || yBar;
+      return '<g stroke="' + col + '" stroke-width="1.3"><line x1="' + x + '" x2="' + x + '" y1="' + yfn(Math.max(lo, 0)) + '" y2="' + yfn(hi) + '"/>' +
+        '<line x1="' + (x - w) + '" x2="' + (x + w) + '" y1="' + yfn(hi) + '" y2="' + yfn(hi) + '"/><line x1="' + (x - w) + '" x2="' + (x + w) + '" y1="' + yfn(Math.max(lo, 0)) + '" y2="' + yfn(Math.max(lo, 0)) + '"/></g>';
+    }
+    var n = Math.max(data.length, 1), slot = pw / n, bw = avg ? Math.min(110, pw * 0.42) : Math.min(46, slot * 0.62), bars = "", errs = "", lines = "", markers = "";
+    var seriesPts = {}; /* id -> [{cx, j, sd}] */
+    present.forEach(function (p) { seriesPts[p.id] = []; });
     data.forEach(function (d, k) {
       var cx = L + slot * (k + 0.5), acc = 0;
       S.products.forEach(function (p) {
         var x = d.r.per[p.id]; if (!x || x[key] <= 0) return;
-        var v = x[key], y0 = y(acc + v), hh = y(acc) - y0; acc += v;
+        var vv = x[key], y0 = yBar(acc + vv), hh = yBar(acc) - y0; acc += vv;
         var lab = avg
           ? esc(p.label) + " mean (n = " + x.n + "): FE " + pm({ m: x.fe, sd: x.sd_fe }, 3) + " %, j " + pm({ m: x.j, sd: x.sd_j }, 3) + " mA cm⁻²"
           : esc(p.label) + " @ " + esc(d.t) + " min: FE " + sig(x.fe, 3) + " %, j " + sig(x.j, 3) + " mA cm⁻²";
         bars += '<rect class="gc-seg" x="' + (cx - bw / 2) + '" y="' + y0 + '" width="' + bw + '" height="' + Math.max(hh, 0) + '" fill="' + p.hex + '" stroke="#fff" stroke-width="0.6" data-tip="' + lab + '"><title>' + lab + "</title></rect>";
-        if (avg && isFinite(x["sd_" + key])) errs += whisk(cx + bw / 2 - 10, acc - x["sd_" + key], acc + x["sd_" + key], 4, "#14213d");
-        if (avg && hh > 13) bars += '<text x="' + (cx - bw / 2 - 5) + '" y="' + (y0 + hh / 2 + 3.5) + '" text-anchor="end" font-size="9" fill="#3d4a5c">' + sig(v, 3) + "</text>";
+        if (avg && isFinite(x["sd_" + key])) errs += whisk(cx + bw / 2 - 10, acc - x["sd_" + key], acc + x["sd_" + key], 4, "#14213d", yBar);
+        /* Segment label: product name + value when tall enough */
+        if (hh > 14) {
+          var txt = esc(p.label) + " " + sig(vv, 3);
+          var fill = "#ffffff";
+          /* dark text on light segments */
+          var lum = (function (h) { h = h.replace("#",""); if (h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16); return 0.299*r+0.587*g+0.114*b; })(p.hex);
+          if (lum > 160) fill = "#14213d";
+          var fs = txt.length > 10 && bw < 90 ? 8 : 9;
+          bars += '<text x="' + cx + '" y="' + (y0 + hh / 2 + 3.2) + '" text-anchor="middle" font-size="' + fs + '" font-weight="600" fill="' + fill + '" pointer-events="none">' + txt + "</text>";
+        }
+        if (dual && x.j > 0) seriesPts[p.id].push({ cx: cx, j: x.j, sd: x.sd_j, tip: lab });
       });
       var totTxt, topV = acc, col = isFE && acc > 100 ? "#c2410c" : "#14213d";
-      if (avg) {
-        var ts = d.r.tot[key]; totTxt = pm(ts, 3) + (isFE ? " %" : "");
-        if (isFinite(ts.sd)) { errs += whisk(cx, ts.m - ts.sd, ts.m + ts.sd, 7, "#c2410c"); topV = Math.max(acc, ts.m + ts.sd); }
-        col = isFE && ts.m > 100 ? "#c2410c" : "#14213d";
-      } else totTxt = sig(acc, 3);
-      bars += '<text x="' + cx + '" y="' + (y(topV) - 5) + '" text-anchor="middle" font-size="' + (avg ? 12 : 10) + '" font-weight="700" fill="' + col + '">' + totTxt + "</text>" +
+      if (avg && d.r.tot) {
+        var ts = d.r.tot[key] || d.r.tot.fe;
+        totTxt = pm(isFE ? d.r.tot.fe : d.r.tot.j, 3) + (isFE ? " %" : "");
+        if (isFE && isFinite(d.r.tot.fe.sd)) { errs += whisk(cx, d.r.tot.fe.m - d.r.tot.fe.sd, d.r.tot.fe.m + d.r.tot.fe.sd, 7, "#c2410c", yBar); topV = Math.max(acc, d.r.tot.fe.m + d.r.tot.fe.sd); }
+        col = isFE && d.r.tot.fe.m > 100 ? "#c2410c" : "#14213d";
+      } else totTxt = sig(acc, 3) + (isFE ? " %" : "");
+      bars += '<text x="' + cx + '" y="' + (yBar(topV) - 5) + '" text-anchor="middle" font-size="' + (avg ? 12 : 10) + '" font-weight="700" fill="' + col + '">' + totTxt + "</text>" +
         '<text x="' + cx + '" y="' + (T + ph + 14) + '" text-anchor="middle" font-size="10" fill="#3d4a5c">' + esc(d.t) + "</text>";
     });
-    var refl = (ref && isFinite(ref)) ? '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(ref) + '" y2="' + y(ref) + '" stroke="#c2410c" stroke-width="1.2" stroke-dasharray="5 3"/>' +
-      '<text x="' + (W - Rm) + '" y="' + (y(ref) - 3) + '" text-anchor="end" font-size="9" fill="#c2410c">' + (isFE ? "100 %" : "j_total " + sig(ref, 3)) + "</text>" : "";
+    if (dual) {
+      present.forEach(function (p) {
+        var pts = seriesPts[p.id]; if (!pts || !pts.length) return;
+        var dpath = pts.map(function (pt, i) { return (i ? "L" : "M") + pt.cx + " " + yR(pt.j); }).join(" ");
+        lines += '<path d="' + dpath + '" fill="none" stroke="' + p.hex + '" stroke-width="1.8" stroke-dasharray="5 3" stroke-linecap="round"/>';
+        pts.forEach(function (pt) {
+          markers += '<circle cx="' + pt.cx + '" cy="' + yR(pt.j) + '" r="3.4" fill="#fff" stroke="' + p.hex + '" stroke-width="1.8" data-tip="' + pt.tip + '"><title>' + pt.tip + "</title></circle>";
+          if (avg && isFinite(pt.sd) && pt.sd > 0) errs += whisk(pt.cx, pt.j - pt.sd, pt.j + pt.sd, 4, p.hex, yR);
+        });
+      });
+    }
+    var ref = isFE ? 100 : c.j;
+    var refl = (ref && isFinite(ref) && isFE) ? '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + yL(ref) + '" y2="' + yL(ref) + '" stroke="#c2410c" stroke-width="1.2" stroke-dasharray="5 3"/>' +
+      '<text x="' + (L + 4) + '" y="' + (yL(ref) - 3) + '" text-anchor="start" font-size="9" fill="#c2410c">100 %</text>' : "";
     var empty = data.length ? "" : '<text x="' + (L + pw / 2) + '" y="' + (T + ph / 2) + '" text-anchor="middle" font-size="12" fill="#8492a3">Enter ppm values to plot</text>';
+    var axisR = dual ? '<line x1="' + (W - Rm) + '" x2="' + (W - Rm) + '" y1="' + T + '" y2="' + (T + ph) + '" stroke="#14213d"/>' +
+      '<text transform="translate(' + (W - 8) + " " + (T + ph / 2) + ') rotate(90)" text-anchor="middle" font-size="11" font-weight="600" fill="#14213d">j_i (mA cm⁻²)</text>' : "";
     el.innerHTML = '<svg id="gc-chart-svg" data-view="' + (avg ? "avg" : "per") + '" data-mode="' + chartMode + '" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H + '" font-family="IBM Plex Sans, sans-serif" width="100%">' +
-      '<rect width="' + W + '" height="' + H + '" fill="#ffffff"/>' + g + refl + bars + errs + empty +
-      '<line x1="' + L + '" x2="' + L + '" y1="' + T + '" y2="' + (T + ph) + '" stroke="#14213d"/><line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + (T + ph) + '" y2="' + (T + ph) + '" stroke="#14213d"/>' +
+      '<rect width="' + W + '" height="' + H + '" fill="#ffffff"/>' + g + gR + refl + bars + lines + markers + errs + empty +
+      '<line x1="' + L + '" x2="' + L + '" y1="' + T + '" y2="' + (T + ph) + '" stroke="#14213d"/><line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + (T + ph) + '" y2="' + (T + ph) + '" stroke="#14213d"/>' + axisR +
       '<text x="' + (L + pw / 2) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="11" font-weight="600" fill="#14213d">' + xTitle + "</text>" +
       '<text transform="translate(12 ' + (T + ph / 2) + ') rotate(-90)" text-anchor="middle" font-size="11" font-weight="600" fill="#14213d">' + (isFE ? "FE (%)" : "j_i (mA cm⁻²)") + "</text></svg>";
-    $("gc-legend").innerHTML = S.products.map(function (p) { return '<span class="gc-leg"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + "</span>"; }).join("") +
-      '<span class="gc-leg"><span class="gc-dash"></span>' + (isFE ? "100 % ref" : "j_total") + "</span>" +
-      (avg ? '<span class="gc-leg">error bars: ± 1 SD (n − 1); navy = product, red-orange = total</span>' : "");
+    /* Legend: only products present; distinguish FE (bars) vs j (line) */
+    var leg = "";
+    if (dual) {
+      leg += '<span class="gc-leg gc-leg--group">FE (bars)</span>';
+      present.forEach(function (p) {
+        leg += '<span class="gc-leg"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + "</span>";
+      });
+      leg += '<span class="gc-leg gc-leg--group">j (line)</span>';
+      present.forEach(function (p) {
+        leg += '<span class="gc-leg"><span class="gc-line" style="border-color:' + p.hex + '"><span class="gc-line__dot" style="background:' + p.hex + ';border-color:' + p.hex + '"></span></span>' + esc(p.label) + "</span>";
+      });
+    } else {
+      present.forEach(function (p) {
+        leg += '<span class="gc-leg"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + "</span>";
+      });
+    }
+    if (isFE) leg += '<span class="gc-leg"><span class="gc-dash"></span>100 % ref</span>';
+    if (avg) leg += '<span class="gc-leg">error bars: ± 1 SD (n − 1)</span>';
+    $("gc-legend").innerHTML = leg;
   }
   /* Save a file: Web Share API (level 2, files) first on touch devices / installed app — the reliable path in
      iOS Safari and Android standalone mode — then fall back to an <a download>. */
@@ -834,13 +991,58 @@
 
   function renderProducts() {
     $("gc-products").innerHTML = S.products.map(function (p, k) {
+      var tag = p.phase === "liquid" ? (p.detector || "liq") : "GC";
       return '<div class="gc-prod"><span class="gc-dot" style="background:' + p.hex + '"></span>' +
         '<input class="input" aria-label="Product name" data-pk="' + k + '" data-f="name" value="' + esc(p.label) + '">' +
         '<input class="input" aria-label="n electrons" inputmode="numeric" data-pk="' + k + '" data-f="n" value="' + p.n + '" title="electrons transferred (n)">' +
+        '<span class="gc-phase" title="' + esc(p.formula || "") + '">' + esc(tag) + '</span>' +
         '<button type="button" class="gc-x" data-rmp="' + k + '" aria-label="Remove product">×</button></div>';
     }).join("");
+    renderPresetSelect();
+    renderLiquid();
+  }
+  function renderPresetSelect() {
+    var sel = $("gc-preset-select"); if (!sel) return;
+    var used = {}; S.products.forEach(function (p) { used[p.id] = true; });
+    var gas = "", liq = "";
+    PRESET_ORDER.forEach(function (id) {
+      var P = PRESETS[id]; if (!P || used[id]) return;
+      var opt = '<option value="' + id + '">' + esc(P.label) + " (n=" + P.n + ")</option>";
+      if (P.phase === "liquid") liq += opt; else gas += opt;
+    });
+    sel.innerHTML = '<option value="">+ Add product…</option>' +
+      (gas ? '<optgroup label="Gas (GC)">' + gas + "</optgroup>" : "") +
+      (liq ? '<optgroup label="Liquid (HPLC / HSGC)">' + liq + "</optgroup>" : "") +
+      '<option value="custom">+ Custom</option>';
+  }
+  function renderLiquid() {
+    var box = $("gc-liquid"); if (!box) return;
+    var liquids = S.products.filter(function (p) { return !isGas(p); });
+    if (!liquids.length) { box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    var rows = liquids.map(function (p) {
+      var slot = S.liq[p.id] || { we: "", ce: "" };
+      return '<label class="gc-cell"><span class="gc-cell__lab"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + " WE (μM)</span>" +
+        '<input class="input" inputmode="decimal" data-liq="' + p.id + '" data-side="we" value="' + esc(slot.we) + '" placeholder="μM">' +
+        '<span class="gc-cell__out" id="gc-lo-' + p.id + '">FE —</span></label>' +
+        '<label class="gc-cell"><span class="gc-cell__lab">' + esc(p.label) + " CE (μM)</span>" +
+        '<input class="input" inputmode="decimal" data-liq="' + p.id + '" data-side="ce" value="' + esc(slot.ce == null ? "" : slot.ce) + '" placeholder="μM"></label>';
+    }).join("");
+    box.innerHTML = '<header class="calc-card__header" style="padding:0 0 8px"><h3 class="calc-card__title" style="font-size:1rem">Liquid products</h3>' +
+      '<p class="calc-card__desc" style="margin:0">FE = n·F·(c_WE·V_W + c_CE·V_C)/Q · 100 (sheet formula). Concentrations in μM, volumes in mL, Q in C.</p></header>' +
+      '<div class="gc-grid">' +
+      '<label class="field"><span class="field__label">Total charge Q (C)</span><input class="input" inputmode="decimal" id="gc-Q" value="' + esc(S.Q) + '"></label>' +
+      '<label class="field"><span class="field__label">V_W catholyte (mL)</span><input class="input" inputmode="decimal" id="gc-Vw" value="' + esc(S.Vw) + '"></label>' +
+      '<label class="field"><span class="field__label">V_C anolyte (mL)</span><input class="input" inputmode="decimal" id="gc-Vc" value="' + esc(S.Vc) + '"></label>' +
+      '</div><div class="gc-inj__rows" style="padding-top:8px">' + rows + "</div>";
+    ["Q", "Vw", "Vc"].forEach(function (k) {
+      var el = $("gc-" + k); if (!el || el._bound) return;
+      el._bound = true;
+      el.addEventListener("input", function (e) { S[k] = e.target.value; update(); });
+    });
   }
   function renderInj() {
+    var gases = S.products.filter(isGas);
     $("gc-injections").innerHTML = S.inj.map(function (inj, k) {
       return '<div class="gc-inj" data-k="' + k + '"><div class="gc-inj__top"><span class="gc-inj__title">#' + (k + 1) + '</span>' +
         '<label class="sr-only" for="gc-t-' + k + '">Injection time (min)</label>' +
@@ -849,7 +1051,7 @@
         '<button type="button" class="gc-x" data-rmi="' + k + '" aria-label="Remove injection">×</button></div>' +
         '<div class="gc-inj__rows">' + (S.imode === "j"
           ? '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="' + esc(S.j) + '"><span class="gc-cell__out" id="gc-c-' + k + '">I —</span></label>'
-          : '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"><span class="gc-cell__out" id="gc-c-' + k + '">j —</span></label>') + S.products.map(function (p) {
+          : '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"><span class="gc-cell__out" id="gc-c-' + k + '">j —</span></label>') + gases.map(function (p) {
           return '<label class="gc-cell"><span class="gc-cell__lab"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + ' (ppm)</span>' +
             '<input class="input" inputmode="decimal" data-ik="' + k + '" data-pid="' + p.id + '" value="' + esc(inj.ppm[p.id] == null ? "" : inj.ppm[p.id]) + '" placeholder="ppm">' +
             '<span class="gc-cell__out" id="gc-o-' + k + '-' + p.id + '">FE — · j —</span></label>';
@@ -861,8 +1063,10 @@
     $("gc-I").textContent = c.ok ? sig(c.I_mA, 4) + " mA" : "—";
     $("gc-ndot").textContent = c.ok ? sig(c.ndot * 1e6, 4) + " µmol s⁻¹" : "—";
     var results = S.inj.map(function (inj) { return compute(inj, c); });
+    var liqRes = computeLiquid(c);
     results.forEach(function (r, k) {
       S.products.forEach(function (p) {
+        if (!isGas(p)) return;
         var o = $("gc-o-" + k + "-" + p.id), x = r.per[p.id];
         if (o) o.innerHTML = x ? "FE <b>" + sig(x.fe, 3) + "%</b> · j " + sig(x.j, 3) + " mA cm⁻²" : "FE — · j —";
       });
@@ -883,9 +1087,13 @@
       $("gc-unacc").textContent = sig(100 - tot, 3) + " %";
       $("gc-sum-bar").innerHTML = barSVG(latest.r, 8);
       $("gc-sum-chips").innerHTML = S.products.map(function (p) {
-        var x = latest.r.per[p.id]; if (!x) return "";
+        var x = isGas(p) ? latest.r.per[p.id] : liqRes[p.id]; if (!x) return "";
         return '<span class="gc-chip"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + " " + sig(x.fe, 3) + "%</span>";
       }).join("");
+      Object.keys(liqRes).forEach(function (id) {
+        var o = $("gc-lo-" + id), L = liqRes[id];
+        if (o) o.innerHTML = L ? "FE <b>" + sig(L.fe, 3) + "%</b> · j " + sig(L.j, 3) : "FE —";
+      });
       sum.classList.toggle("is-warning", tot > 100);
       if (tot > 100) { flag.hidden = false; flag.className = "gc-flag warn"; flag.textContent = "Total FE > 100% — check flow calibration, current, or GC response factors."; }
       else if (tot < 90) { flag.hidden = false; flag.className = "gc-flag note"; flag.textContent = "Total FE < 90% — liquid products (formate, EtOH, …) or losses unaccounted."; }
@@ -895,11 +1103,12 @@
       $("gc-sum-label").textContent = "enter a ppm value"; flag.hidden = true; sum.classList.remove("is-warning");
     }
     // table
-    var head = "<tr><th>t_inj (min)</th>" + S.products.map(function (p) { return "<th>FE_" + esc(p.name) + " (%)</th>"; }).join("") + "<th>FE_total (%)</th></tr>";
+    var gases = S.products.filter(isGas);
+    var head = "<tr><th>t_inj (min)</th>" + gases.map(function (p) { return "<th>FE_" + esc(p.name) + " (%)</th>"; }).join("") + "<th>FE_total (%)</th></tr>";
     var rows = "", sums = {}, cnt = {}, tsum = 0, tc = 0;
     order.forEach(function (o) {
       var r = results[o.i]; if (!r.any) return;
-      rows += "<tr><td>" + esc(o.v.t) + "</td>" + S.products.map(function (p) {
+      rows += "<tr><td>" + esc(o.v.t) + "</td>" + gases.map(function (p) {
         var x = r.per[p.id]; if (x) { sums[p.id] = (sums[p.id] || 0) + x.fe; cnt[p.id] = (cnt[p.id] || 0) + 1; }
         return "<td>" + (x ? sig(x.fe, 3) : "") + "</td>";
       }).join("") + '<td class="' + (r.total > 100 ? "warn" : "") + '">' + sig(r.total, 3) + "</td></tr>";
@@ -907,12 +1116,20 @@
     });
     if (tc) {
       var AG = aggregate(order.filter(function (o) { return results[o.i].any; }).map(function (o) { return { t: o.v.t, r: results[o.i] }; }), c);
-      rows += '<tr class="avg"><td>mean ± SD (n = ' + tc + ')</td>' + S.products.map(function (p) { var x = AG.per[p.id]; return "<td>" + (x ? pm({ m: x.fe, sd: x.sd_fe }, 3) : "") + "</td>"; }).join("") +
+      rows += '<tr class="avg"><td>mean ± SD (n = ' + tc + ')</td>' + gases.map(function (p) { var x = AG.per[p.id]; return "<td>" + (x ? pm({ m: x.fe, sd: x.sd_fe }, 3) : "") + "</td>"; }).join("") +
         "<td>" + pm(AG.tot.fe, 3) + "</td></tr>";
     }
+    var liqKeys = Object.keys(liqRes);
+    if (liqKeys.length) {
+      rows += '<tr class="avg"><td>liquid (Q-based)</td>' + gases.map(function () { return "<td></td>"; }).join("") + "<td></td></tr>";
+      S.products.filter(function (p) { return !isGas(p) && liqRes[p.id]; }).forEach(function (p) {
+        var L = liqRes[p.id];
+        rows += "<tr><td>" + esc(p.label) + "</td>" + gases.map(function () { return "<td></td>"; }).join("") + "<td>" + sig(L.fe, 3) + "</td></tr>";
+      });
+    }
     $("gc-table").innerHTML = "<thead>" + head + "</thead><tbody>" + (rows || '<tr><td colspan="99" style="text-align:left">No data yet</td></tr>') + "</tbody>";
-    renderChart(results, order, c);
-    GC._last = { c: c, results: results, order: order };
+    renderChart(results, order, c, liqRes);
+    GC._last = { c: c, results: results, order: order, liq: liqRes };
     save();
   }
   /* ===== EXPORT TEMPLATE (single source of truth for CSV + XLSX column layout) =====
@@ -1007,17 +1224,31 @@
     ["j", "area", "Itot", "flow", "T", "P"].forEach(function (k) { $("gc-" + k).addEventListener("input", function (e) { S[k] = e.target.value; if (k === "j" || k === "Itot") document.querySelectorAll('[data-f="' + (k === "j" ? "j" : "I") + '"]').forEach(function (i) { i.placeholder = S[k]; }); update(); }); });
     $("gc-imode").addEventListener("click", function (e) { var b = e.target.closest(".seg__btn"); if (b) { S.imode = b.dataset.v; syncControls(); renderInj(); update(); } });
     $("gc-ref").addEventListener("click", function (e) { var b = e.target.closest(".seg__btn"); if (b) { S.ref = b.dataset.v; syncControls(); update(); } });
-    $("gc-presets").addEventListener("click", function (e) {
-      var b = e.target.closest("[data-p]"); if (!b) return;
-      var p = b.dataset.p;
+    function addProduct(p) {
       if (p === "custom") {
         var id = "X" + Date.now().toString(36);
-        S.products.push({ id: id, name: "custom", label: "custom", n: 2, hex: CUSTOM_HEX[S.products.length % CUSTOM_HEX.length] });
+        S.products.push({ id: id, name: "custom", label: "custom", n: 2, phase: "gas", detector: "GC", formula: "", hex: CUSTOM_HEX[S.products.length % CUSTOM_HEX.length] });
       } else {
-        if (S.products.some(function (q) { return q.id === p; })) return;
-        var P = PRESETS[p]; S.products.push({ id: p, name: P.name, label: P.label, n: P.n, hex: P.hex });
+        if (!p || S.products.some(function (q) { return q.id === p; })) return;
+        var item = prodFromPreset(p);
+        S.products.push(item);
+        if (item.phase === "liquid") S.liq[p] = S.liq[p] || { we: "", ce: "" };
       }
       renderProducts(); renderInj(); update();
+    }
+    var presetBox = $("gc-presets");
+    if (presetBox) presetBox.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-p]"); if (!b) return; addProduct(b.dataset.p);
+    });
+    var presetSel = $("gc-preset-select");
+    if (presetSel) presetSel.addEventListener("change", function (e) {
+      var v = e.target.value; if (!v) return; addProduct(v); e.target.value = "";
+    });
+    var liqBox = $("gc-liquid");
+    if (liqBox) liqBox.addEventListener("input", function (e) {
+      var id = e.target.dataset.liq; if (!id) return;
+      if (!S.liq[id]) S.liq[id] = { we: "", ce: "" };
+      S.liq[id][e.target.dataset.side] = e.target.value; update();
     });
     $("gc-products").addEventListener("input", function (e) {
       var k = e.target.dataset.pk; if (k == null) return; var p = S.products[k];
@@ -1025,7 +1256,12 @@
       else { p.label = e.target.value; p.name = e.target.value.replace(/[₀-₉]/g, function (c) { return String(c.charCodeAt(0) - 8320); }).replace(/[^A-Za-z0-9_]/g, "") || "custom"; }
       renderInj(); update();
     });
-    $("gc-products").addEventListener("click", function (e) { var k = e.target.dataset.rmp; if (k != null) { S.products.splice(k, 1); renderProducts(); renderInj(); update(); } });
+    $("gc-products").addEventListener("click", function (e) {
+      var k = e.target.dataset.rmp; if (k == null) return;
+      var gone = S.products.splice(k, 1)[0];
+      if (gone && S.liq) delete S.liq[gone.id];
+      renderProducts(); renderInj(); update();
+    });
     $("gc-injections").addEventListener("input", function (e) {
       var k = e.target.dataset.ik; if (k == null) return;
       var f = e.target.dataset.f;

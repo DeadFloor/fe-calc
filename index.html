@@ -133,11 +133,17 @@
               <button type="button" class="chip-btn" data-p="CO">+ CO</button>
               <button type="button" class="chip-btn" data-p="CH4">+ CH₄</button>
               <button type="button" class="chip-btn" data-p="C2H4">+ C₂H₄</button>
+              <button type="button" class="chip-btn" data-p="HCOO">+ HCOO⁻</button>
+              <button type="button" class="chip-btn" data-p="EtOH">+ EtOH</button>
               <button type="button" class="chip-btn" data-p="custom">+ Custom</button>
             </div>
+            <label class="gc-preset-wrap"><span class="sr-only">Add from catalog</span>
+              <select class="input gc-preset-select" id="gc-preset-select" aria-label="Add product from full C1–C6 catalog"></select>
+            </label>
             <div id="gc-products" class="gc-products"></div>
           </div>
           <div id="gc-injections" class="gc-injections"></div>
+          <div id="gc-liquid" class="gc-liquid" hidden></div>
         </article>
 
         <article class="calc-card" id="gc-chart-card">
