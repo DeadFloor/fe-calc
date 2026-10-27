@@ -700,12 +700,14 @@
     var P = PRESETS[id];
     return { id: id, name: P.name, label: P.label, formula: P.formula, n: P.n, phase: P.phase, detector: P.detector, hex: P.hex };
   }
+  var SCHEMA = 2; /* 2 = full C1–C6 gas+liquid catalog from Steve's workbook */
   function defaults() {
     return {
+      schema: SCHEMA,
       imode: "j", j: "100", area: "1", Itot: "100", flow: "20", ref: "std", T: "298.15", P: "101325",
       Q: "", Vw: "15", Vc: "15",
       liq: {},
-      products: ["H2", "CO", "CH4", "C2H4"].map(prodFromPreset),
+      products: PRESET_ORDER.map(prodFromPreset),
       sched: { t1: "15", ana: "12", post: "3", count: 4 },
       inj: [{ ppm: {} }, { ppm: {} }, { ppm: {} }, { ppm: {} }]
     };
@@ -725,13 +727,36 @@
     if (S.Q == null) S.Q = "";
     if (S.Vw == null) S.Vw = "15";
     if (S.Vc == null) S.Vc = "15";
+    /* One-shot: expand saved product lists to the full workbook catalog, keeping user values. */
+    if (!(S.schema >= SCHEMA)) {
+      var byId = {};
+      (S.products || []).forEach(function (p) { byId[p.id] = p; });
+      var next = [];
+      PRESET_ORDER.forEach(function (id) {
+        if (byId[id]) {
+          var keep = byId[id], P = PRESETS[id];
+          if (!keep.phase) keep.phase = P.phase;
+          if (!keep.detector) keep.detector = P.detector;
+          if (!keep.formula) keep.formula = P.formula;
+          if (!keep.hex) keep.hex = P.hex;
+          if (!keep.name) keep.name = P.name;
+          if (!keep.label) keep.label = P.label;
+          if (keep.n == null) keep.n = P.n;
+          next.push(keep);
+          delete byId[id];
+        } else next.push(prodFromPreset(id));
+      });
+      Object.keys(byId).forEach(function (id) { next.push(byId[id]); });
+      S.products = next;
+      S.schema = SCHEMA;
+    }
     S.products.forEach(function (p) {
       if (!p.phase) p.phase = (PRESETS[p.id] && PRESETS[p.id].phase) || "gas";
       if (!p.detector && PRESETS[p.id]) p.detector = PRESETS[p.id].detector;
       if (!p.formula && PRESETS[p.id]) p.formula = PRESETS[p.id].formula;
       if (p.phase === "liquid" && !S.liq[p.id]) S.liq[p.id] = { we: "", ce: "" };
     });
-    S.inj.forEach(function (r) { if (r.t != null && r.manual == null) r.manual = false; });
+    S.inj.forEach(function (r) { if (r.t != null && r.manual == null) r.manual = false; if (!r.ppm) r.ppm = {}; });
     applySched();
   }
   function applySched() {
@@ -942,24 +967,20 @@
       '<line x1="' + L + '" x2="' + L + '" y1="' + T + '" y2="' + (T + ph) + '" stroke="#14213d"/><line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + (T + ph) + '" y2="' + (T + ph) + '" stroke="#14213d"/>' + axisR +
       '<text x="' + (L + pw / 2) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="11" font-weight="600" fill="#14213d">' + xTitle + "</text>" +
       '<text transform="translate(12 ' + (T + ph / 2) + ') rotate(-90)" text-anchor="middle" font-size="11" font-weight="600" fill="#14213d">' + (isFE ? "FE (%)" : "j_i (mA cm⁻²)") + "</text></svg>";
-    /* Legend: only products present; distinguish FE (bars) vs j (line) */
+    /* Legend: only products with data; compact when many (one swatch = FE bar + j line). */
     var leg = "";
-    if (dual) {
-      leg += '<span class="gc-leg gc-leg--group">FE (bars)</span>';
-      present.forEach(function (p) {
+    if (dual) leg += '<span class="gc-leg gc-leg--group">■ FE · ┄ j</span>';
+    present.forEach(function (p) {
+      if (dual) {
+        leg += '<span class="gc-leg"><span class="gc-dot" style="background:' + p.hex + '"></span>' +
+          '<span class="gc-line" style="border-color:' + p.hex + '"><span class="gc-line__dot" style="background:' + p.hex + ';border-color:' + p.hex + '"></span></span>' +
+          esc(p.label) + "</span>";
+      } else {
         leg += '<span class="gc-leg"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + "</span>";
-      });
-      leg += '<span class="gc-leg gc-leg--group">j (line)</span>';
-      present.forEach(function (p) {
-        leg += '<span class="gc-leg"><span class="gc-line" style="border-color:' + p.hex + '"><span class="gc-line__dot" style="background:' + p.hex + ';border-color:' + p.hex + '"></span></span>' + esc(p.label) + "</span>";
-      });
-    } else {
-      present.forEach(function (p) {
-        leg += '<span class="gc-leg"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + "</span>";
-      });
-    }
+      }
+    });
     if (isFE) leg += '<span class="gc-leg"><span class="gc-dash"></span>100 % ref</span>';
-    if (avg) leg += '<span class="gc-leg">error bars: ± 1 SD (n − 1)</span>';
+    if (avg) leg += '<span class="gc-leg">± 1 SD (n − 1)</span>';
     $("gc-legend").innerHTML = leg;
   }
   /* Save a file: Web Share API (level 2, files) first on touch devices / installed app — the reliable path in
@@ -989,15 +1010,25 @@
     return S.inj.map(function (v, i) { return { v: v, i: i }; }).sort(function (a, b) { return (pnum(a.v.t) || 0) - (pnum(b.v.t) || 0); });
   }
 
+  function prodCard(p, k) {
+    var tag = p.phase === "liquid" ? (p.detector || "liq") : "GC";
+    return '<div class="gc-prod"><span class="gc-dot" style="background:' + p.hex + '"></span>' +
+      '<input class="input" aria-label="Product name" data-pk="' + k + '" data-f="name" value="' + esc(p.label) + '">' +
+      '<input class="input gc-prod__n" aria-label="n electrons" inputmode="numeric" data-pk="' + k + '" data-f="n" value="' + p.n + '" title="electrons transferred (n)">' +
+      '<span class="gc-phase" title="' + esc(p.formula || "") + '">' + esc(tag) + '</span>' +
+      '<button type="button" class="gc-x" data-rmp="' + k + '" aria-label="Remove product">×</button></div>';
+  }
   function renderProducts() {
-    $("gc-products").innerHTML = S.products.map(function (p, k) {
-      var tag = p.phase === "liquid" ? (p.detector || "liq") : "GC";
-      return '<div class="gc-prod"><span class="gc-dot" style="background:' + p.hex + '"></span>' +
-        '<input class="input" aria-label="Product name" data-pk="' + k + '" data-f="name" value="' + esc(p.label) + '">' +
-        '<input class="input" aria-label="n electrons" inputmode="numeric" data-pk="' + k + '" data-f="n" value="' + p.n + '" title="electrons transferred (n)">' +
-        '<span class="gc-phase" title="' + esc(p.formula || "") + '">' + esc(tag) + '</span>' +
-        '<button type="button" class="gc-x" data-rmp="' + k + '" aria-label="Remove product">×</button></div>';
-    }).join("");
+    var gasHtml = "", liqHtml = "", gN = 0, lN = 0;
+    S.products.forEach(function (p, k) {
+      if (isGas(p)) { gasHtml += prodCard(p, k); gN++; }
+      else { liqHtml += prodCard(p, k); lN++; }
+    });
+    $("gc-products").innerHTML =
+      '<details class="gc-fold" open><summary class="gc-fold__sum">Gas / GC products <span class="gc-fold__n">' + gN + "</span></summary>" +
+      '<div class="gc-prod-scroll">' + (gasHtml || '<p class="gc-hint">None — add from the catalog.</p>') + "</div></details>" +
+      '<details class="gc-fold" open><summary class="gc-fold__sum">Liquid products <span class="gc-fold__n">' + lN + "</span></summary>" +
+      '<div class="gc-prod-scroll">' + (liqHtml || '<p class="gc-hint">None — add formate, alcohols, …</p>') + "</div></details>";
     renderPresetSelect();
     renderLiquid();
   }
@@ -1022,19 +1053,19 @@
     box.hidden = false;
     var rows = liquids.map(function (p) {
       var slot = S.liq[p.id] || { we: "", ce: "" };
-      return '<label class="gc-cell"><span class="gc-cell__lab"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + " WE (μM)</span>" +
-        '<input class="input" inputmode="decimal" data-liq="' + p.id + '" data-side="we" value="' + esc(slot.we) + '" placeholder="μM">' +
-        '<span class="gc-cell__out" id="gc-lo-' + p.id + '">FE —</span></label>' +
-        '<label class="gc-cell"><span class="gc-cell__lab">' + esc(p.label) + " CE (μM)</span>" +
-        '<input class="input" inputmode="decimal" data-liq="' + p.id + '" data-side="ce" value="' + esc(slot.ce == null ? "" : slot.ce) + '" placeholder="μM"></label>';
+      return '<label class="gc-cell gc-cell--compact"><span class="gc-cell__lab"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + "</span>" +
+        '<div class="gc-liq-pair">' +
+        '<input class="input" inputmode="decimal" data-liq="' + p.id + '" data-side="we" value="' + esc(slot.we) + '" placeholder="WE μM" aria-label="' + esc(p.label) + ' WE μM">' +
+        '<input class="input" inputmode="decimal" data-liq="' + p.id + '" data-side="ce" value="' + esc(slot.ce == null ? "" : slot.ce) + '" placeholder="CE μM" aria-label="' + esc(p.label) + ' CE μM">' +
+        '</div><span class="gc-cell__out" id="gc-lo-' + p.id + '">FE —</span></label>';
     }).join("");
-    box.innerHTML = '<header class="calc-card__header" style="padding:0 0 8px"><h3 class="calc-card__title" style="font-size:1rem">Liquid products</h3>' +
-      '<p class="calc-card__desc" style="margin:0">FE = n·F·(c_WE·V_W + c_CE·V_C)/Q · 100 (sheet formula). Concentrations in μM, volumes in mL, Q in C.</p></header>' +
+    box.innerHTML = '<details class="gc-fold" open><summary class="gc-fold__sum">Liquid FE inputs <span class="gc-fold__n">' + liquids.length + "</span></summary>" +
+      '<p class="gc-hint">FE = n·F·(c_WE·V_W + c_CE·V_C)/Q · 100. Concentrations μM, volumes mL, Q in C.</p>' +
       '<div class="gc-grid">' +
       '<label class="field"><span class="field__label">Total charge Q (C)</span><input class="input" inputmode="decimal" id="gc-Q" value="' + esc(S.Q) + '"></label>' +
       '<label class="field"><span class="field__label">V_W catholyte (mL)</span><input class="input" inputmode="decimal" id="gc-Vw" value="' + esc(S.Vw) + '"></label>' +
       '<label class="field"><span class="field__label">V_C anolyte (mL)</span><input class="input" inputmode="decimal" id="gc-Vc" value="' + esc(S.Vc) + '"></label>' +
-      '</div><div class="gc-inj__rows" style="padding-top:8px">' + rows + "</div>";
+      '</div><div class="gc-liq-scroll">' + rows + "</div></details>";
     ["Q", "Vw", "Vc"].forEach(function (k) {
       var el = $("gc-" + k); if (!el || el._bound) return;
       el._bound = true;
@@ -1044,18 +1075,23 @@
   function renderInj() {
     var gases = S.products.filter(isGas);
     $("gc-injections").innerHTML = S.inj.map(function (inj, k) {
+      var cur = S.imode === "j"
+        ? '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="' + esc(S.j) + '"><span class="gc-cell__out" id="gc-c-' + k + '">I —</span></label>'
+        : '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"><span class="gc-cell__out" id="gc-c-' + k + '">j —</span></label>';
+      var ppm = gases.map(function (p) {
+        return '<label class="gc-cell gc-cell--compact"><span class="gc-cell__lab"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + "</span>" +
+          '<input class="input" inputmode="decimal" data-ik="' + k + '" data-pid="' + p.id + '" value="' + esc(inj.ppm[p.id] == null ? "" : inj.ppm[p.id]) + '" placeholder="ppm">' +
+          '<span class="gc-cell__out" id="gc-o-' + k + '-' + p.id + '">—</span></label>';
+      }).join("");
       return '<div class="gc-inj" data-k="' + k + '"><div class="gc-inj__top"><span class="gc-inj__title">#' + (k + 1) + '</span>' +
         '<label class="sr-only" for="gc-t-' + k + '">Injection time (min)</label>' +
         '<input class="input gc-inj__t" id="gc-t-' + k + '" inputmode="decimal" data-ik="' + k + '" data-f="t" value="' + esc(inj.t) + '" placeholder="t (min)"' + (inj.manual ? "" : " readonly") + '>' +
         '<span class="field__label">min</span><button type="button" class="gc-edit' + (inj.manual ? " is-on" : "") + '" data-man="' + k + '" aria-pressed="' + !!inj.manual + '" title="Edit time manually">' + (inj.manual ? "manual" : "edit") + '</button><span class="gc-inj__tot" id="gc-it-' + k + '">—</span>' +
         '<button type="button" class="gc-x" data-rmi="' + k + '" aria-label="Remove injection">×</button></div>' +
-        '<div class="gc-inj__rows">' + (S.imode === "j"
-          ? '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="' + esc(S.j) + '"><span class="gc-cell__out" id="gc-c-' + k + '">I —</span></label>'
-          : '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"><span class="gc-cell__out" id="gc-c-' + k + '">j —</span></label>') + gases.map(function (p) {
-          return '<label class="gc-cell"><span class="gc-cell__lab"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + ' (ppm)</span>' +
-            '<input class="input" inputmode="decimal" data-ik="' + k + '" data-pid="' + p.id + '" value="' + esc(inj.ppm[p.id] == null ? "" : inj.ppm[p.id]) + '" placeholder="ppm">' +
-            '<span class="gc-cell__out" id="gc-o-' + k + '-' + p.id + '">FE — · j —</span></label>';
-        }).join("") + '</div><svg class="gc-bar" id="gc-b-' + k + '" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"></svg></div>';
+        '<div class="gc-inj__cur">' + cur + "</div>" +
+        '<details class="gc-fold gc-fold--inj"' + (k === 0 ? " open" : "") + '><summary class="gc-fold__sum">GC ppm <span class="gc-fold__n">' + gases.length + "</span></summary>" +
+        '<div class="gc-inj__rows gc-inj__rows--scroll">' + ppm + "</div></details>" +
+        '<svg class="gc-bar" id="gc-b-' + k + '" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"></svg></div>';
     }).join("");
   }
   function update() {
