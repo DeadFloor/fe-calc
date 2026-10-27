@@ -722,9 +722,20 @@
     if (!isFinite(pH)) return NaN; /* need pH for RHE */
     return E_corr + E0_ref + slope * pH;
   }
-  /* t_k = t_1 + (k-1)·(t_analysis + t_post); k is 0-based here */
-  function schedTime(k, sc) { var p = function (v) { return parseFloat(String(v).replace(",", ".")); }; return p(sc.t1) + k * (p(sc.ana) + p(sc.post)); }
-  var GC = { R: R, F: F, molarFlow: molarFlow, fe: fe, feLiquid: feLiquid, schedTime: schedTime, ruUnc: ruUnc, eCorr: eCorr, nernstSlope: nernstSlope, eRhe: eRhe, EREF: EREF };
+  /* t_k (s) = t1_s + (k-1)·(analysis_min·60 + postrun_s); k is 0-based here */
+  function schedTime(k, sc) {
+    var p = function (v) { return parseFloat(String(v).replace(",", ".")); };
+    return p(sc.t1) + k * (p(sc.ana) * 60 + p(sc.post));
+  }
+  function fmtT(t_s) {
+    var s = Number(String(t_s == null ? "" : t_s).replace(",", "."));
+    if (!isFinite(s)) return "—";
+    var m = s / 60;
+    var ss = (Math.abs(s) >= 100 || s === 0) ? String(+s.toPrecision(6)) : String(+s.toPrecision(4));
+    var mm = String(+m.toPrecision(3));
+    return ss + " s (" + mm + " min)";
+  }
+  var GC = { R: R, F: F, molarFlow: molarFlow, fe: fe, feLiquid: feLiquid, schedTime: schedTime, fmtT: fmtT, ruUnc: ruUnc, eCorr: eCorr, nernstSlope: nernstSlope, eRhe: eRhe, EREF: EREF };
   if (typeof module !== "undefined" && module.exports) { module.exports = GC; return; }
   root.GCFE = GC;
 
@@ -744,7 +755,7 @@
     var P = PRESETS[id];
     return { id: id, name: P.name, label: P.label, formula: P.formula, n: P.n, phase: P.phase, detector: P.detector, hex: P.hex };
   }
-  var SCHEMA = 3; /* 3 = technique + iR/RHE + notes */
+  var SCHEMA = 4; /* 4 = schedule in s; no default j/I; CI skips post-run iR */
   function defaults() {
     return {
       schema: SCHEMA,
@@ -754,11 +765,11 @@
       pH: "", slopeMode: "0591",
       irMode: "ci", Ru: "", fComp: "0",
       notes: "",
-      imode: "j", j: "100", area: "1", Itot: "100", flow: "20", ref: "std", T: "298.15", P: "101325",
+      imode: "j", j: "", area: "1", Itot: "", flow: "20", ref: "std", T: "298.15", P: "101325",
       Q: "", Vw: "15", Vc: "15",
       liq: {},
       products: PRESET_ORDER.map(prodFromPreset),
-      sched: { t1: "15", ana: "12", post: "3", count: 4 },
+      sched: { t1: "900", ana: "12", post: "180", count: 4 },
       inj: [{ ppm: {} }, { ppm: {} }, { ppm: {} }, { ppm: {} }]
     };
   }
@@ -774,7 +785,7 @@
       { j: "99.2", E: "-1.00", ppm: { H2: "9100", CO: "14900", CH4: "640", C2H4: "960" } }];
   }
   function migrate() {
-    if (!S.sched) S.sched = { t1: "15", ana: "12", post: "3", count: S.inj.length || 4 };
+    if (!S.sched) S.sched = { t1: "900", ana: "12", post: "180", count: S.inj.length || 4 };
     if (!S.liq) S.liq = {};
     if (S.Q == null) S.Q = "";
     if (S.Vw == null) S.Vw = "15";
@@ -784,6 +795,7 @@
     if (S.Eset == null) S.Eset = "";
     if (S.Iset == null) S.Iset = S.Itot || "";
     if (S.jset == null) S.jset = S.j || "";
+    if (!S.imode) S.imode = "j";
     if (!S.eref) S.eref = "agcl_sat";
     if (S.E0 == null) S.E0 = "0.197";
     if (S.pH == null) S.pH = "";
@@ -792,6 +804,18 @@
     if (S.Ru == null) S.Ru = "";
     if (S.fComp == null) S.fComp = "0";
     if (S.notes == null) S.notes = "";
+    /* Schema < 4: schedule t1/post and auto inj.t were in minutes → convert to seconds. */
+    if (!(S.schema >= 4)) {
+      var sc0 = S.sched || {};
+      var t1m = parseFloat(String(sc0.t1 == null ? "" : sc0.t1).replace(",", "."));
+      var postm = parseFloat(String(sc0.post == null ? "" : sc0.post).replace(",", "."));
+      if (isFinite(t1m)) S.sched.t1 = String(+(t1m * 60).toPrecision(8));
+      if (isFinite(postm)) S.sched.post = String(+(postm * 60).toPrecision(8));
+      (S.inj || []).forEach(function (r) {
+        var tv = parseFloat(String(r.t == null ? "" : r.t).replace(",", "."));
+        if (isFinite(tv)) r.t = String(+(tv * 60).toPrecision(8));
+      });
+    }
     /* One-shot: expand saved product lists to the full workbook catalog, keeping user values. */
     if (!(S.schema >= SCHEMA)) {
       var byId = {};
@@ -834,29 +858,29 @@
   function $(id) { return document.getElementById(id); }
 
   function cond() {
-    var jt = pnum(S.j), A = pnum(S.area), I_mA = S.imode === "j" ? jt * A : pnum(S.Itot);
-    if (S.imode === "I") jt = (pnum(S.area) > 0) ? I_mA / pnum(S.area) : NaN;
+    var A = pnum(S.area);
     var T = S.ref === "std" ? 273.15 : pnum(S.T), P = S.ref === "std" ? 101325 : pnum(S.P);
     var nd = molarFlow(pnum(S.flow), T, P);
-    return { I_A: Math.abs(I_mA) / 1000, I_mA: Math.abs(I_mA), j: Math.abs(jt), ndot: nd, ok: I_mA !== 0 && isFinite(I_mA) && isFinite(nd) && nd > 0 };
+    /* No global default j/I — current is per-injection (CA) or CP setpoint. */
+    return { I_A: NaN, I_mA: NaN, j: NaN, ndot: nd, area: A, ok: isFinite(nd) && nd > 0 && isFinite(A) && A > 0 };
   }
-  /* per-row current: CA uses measured j/I; CP uses setpoint (or override on the row) */
+  /* per-row current: CA uses measured j/I only (blank → no calc); CP uses setpoint (or row override) */
   function rowCur(inj, c) {
     var A = pnum(S.area), jr, Ir;
     if (S.technique === "CP") {
       if (S.cpmode === "j") {
-        jr = isFinite(pnum(inj.j)) ? Math.abs(pnum(inj.j)) : (isFinite(pnum(S.jset)) ? Math.abs(pnum(S.jset)) : c.j);
+        jr = isFinite(pnum(inj.j)) ? Math.abs(pnum(inj.j)) : Math.abs(pnum(S.jset));
         Ir = jr * A;
       } else {
-        Ir = isFinite(pnum(inj.I)) ? Math.abs(pnum(inj.I)) : (isFinite(pnum(S.Iset)) ? Math.abs(pnum(S.Iset)) : c.I_mA);
+        Ir = isFinite(pnum(inj.I)) ? Math.abs(pnum(inj.I)) : Math.abs(pnum(S.Iset));
         jr = A > 0 ? Ir / A : NaN;
       }
     } else if (S.imode === "j") {
-      jr = isFinite(pnum(inj.j)) ? Math.abs(pnum(inj.j)) : c.j; Ir = jr * A;
+      jr = Math.abs(pnum(inj.j)); Ir = jr * A;
     } else {
-      Ir = isFinite(pnum(inj.I)) ? Math.abs(pnum(inj.I)) : c.I_mA; jr = A > 0 ? Ir / A : NaN;
+      Ir = Math.abs(pnum(inj.I)); jr = A > 0 ? Ir / A : NaN;
     }
-    return { j: jr, I_A: Ir / 1000, ok: isFinite(Ir) && Ir > 0 && isFinite(c.ndot) && c.ndot > 0 && isFinite(A) };
+    return { j: jr, I_A: Ir / 1000, ok: isFinite(Ir) && Ir > 0 && isFinite(c.ndot) && c.ndot > 0 && isFinite(A) && A > 0 };
   }
   function resolveE0() {
     var key = S.eref || "agcl_sat", meta = EREF[key] || EREF.agcl_sat;
@@ -870,17 +894,24 @@
   function computeIRRow(inj, rc) {
     var Eapp = injEapplied(inj), I_A = rc.I_A, Ru = pnum(S.Ru), f = pnum(S.fComp);
     if (!isFinite(f)) f = 0;
-    var ru = (isFinite(f) && f >= 100) ? 0 : ruUnc(Ru, f);
-    var Ec = eCorr(Eapp, I_A, Ru, f);
-    var T = S.ref === "std" ? 298.15 : pnum(S.T); /* for Nernst use entered T when custom; else 298.15 */
+    var ru, Ec, ci = (S.irMode === "ci");
+    if (ci) {
+      /* Current interrupt: compensated in real time — no post-run correction */
+      ru = 0; Ec = Eapp;
+    } else {
+      ru = (isFinite(f) && f >= 100) ? 0 : ruUnc(Ru, f);
+      Ec = eCorr(Eapp, I_A, Ru, f);
+    }
+    var T = S.ref === "std" ? 298.15 : pnum(S.T);
     if (S.slopeMode === "nernst") T = pnum(S.T) || 298.15;
     var slope = nernstSlope(S.slopeMode, T);
     var ref = resolveE0(), pH = pnum(S.pH);
     var Erhe = ref.noPh ? (isFinite(Ec) ? Ec : NaN) : eRhe(Ec, ref.E0, pH, slope, false);
     return {
-      E_applied: Eapp, I_mA: rc.I_A * 1000, I_A: rc.I_A, j: rc.j,
-      Ru: Ru, fComp: f, Ru_unc: ru,
-      E_corr: Ec, E_RHE: Erhe, E0: ref.E0, slope: slope, refLabel: ref.label, noPh: ref.noPh
+      E_applied: Eapp, I_mA: isFinite(rc.I_A) ? rc.I_A * 1000 : NaN, I_A: rc.I_A, j: rc.j,
+      Ru: ci ? 0 : Ru, fComp: ci ? 0 : f, Ru_unc: ru,
+      E_corr: Ec, E_RHE: Erhe, E0: ref.E0, slope: slope, refLabel: ref.label, noPh: ref.noPh,
+      ci: ci
     };
   }
   function isGas(p) { return (p.phase || "gas") !== "liquid"; }
@@ -951,7 +982,7 @@
     var data = order.filter(function (o) { return results[o.i].any; }).map(function (o) { return { t: o.v.t, r: results[o.i] }; });
     var isFE = chartMode === "fe", key = isFE ? "fe" : "j";
     var dual = isFE; /* FE bars (left) + j_i lines (right) */
-    var avg = chartView === "avg" && data.length > 0, xTitle = "Injection time (min)";
+    var avg = chartView === "avg" && data.length > 0, xTitle = "Injection time (s)";
     if (avg) {
       var ag = aggregate(data, c);
       /* Fold liquid products into the mean stack (experiment-level FE from sheet). */
@@ -1173,34 +1204,65 @@
       el.addEventListener("input", function (e) { S[k] = e.target.value; update(); });
     });
   }
+  var injTab = 0;
   function renderInj() {
     var gases = S.products.filter(isGas);
-    $("gc-injections").innerHTML = S.inj.map(function (inj, k) {
-      var cur = S.imode === "j"
-        ? '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="' + esc(S.j) + '"><span class="gc-cell__out" id="gc-c-' + k + '">I —</span></label>'
-        : '<label class="gc-cell gc-cell--cur"><span class="gc-cell__lab">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"><span class="gc-cell__out" id="gc-c-' + k + '">j —</span></label>';
-      var ppm = gases.map(function (p) {
-        return '<label class="gc-cell gc-cell--compact"><span class="gc-cell__lab"><span class="gc-dot" style="background:' + p.hex + '"></span>' + esc(p.label) + "</span>" +
-          '<input class="input" inputmode="decimal" data-ik="' + k + '" data-pid="' + p.id + '" value="' + esc(inj.ppm[p.id] == null ? "" : inj.ppm[p.id]) + '" placeholder="ppm">' +
-          '<span class="gc-cell__out" id="gc-o-' + k + '-' + p.id + '">—</span></label>';
-      }).join("");
-      return '<div class="gc-inj" data-k="' + k + '"><div class="gc-inj__top"><span class="gc-inj__title">#' + (k + 1) + '</span>' +
-        '<label class="sr-only" for="gc-t-' + k + '">Injection time (min)</label>' +
-        '<input class="input gc-inj__t" id="gc-t-' + k + '" inputmode="decimal" data-ik="' + k + '" data-f="t" value="' + esc(inj.t) + '" placeholder="t (min)"' + (inj.manual ? "" : " readonly") + '>' +
-        '<span class="field__label">min</span><button type="button" class="gc-edit' + (inj.manual ? " is-on" : "") + '" data-man="' + k + '" aria-pressed="' + !!inj.manual + '" title="Edit time manually">' + (inj.manual ? "manual" : "edit") + '</button><span class="gc-inj__tot" id="gc-it-' + k + '">—</span>' +
-        '<button type="button" class="gc-x" data-rmi="' + k + '" aria-label="Remove injection">×</button></div>' +
-        '<div class="gc-inj__cur">' + cur + "</div>" +
-        '<details class="gc-fold gc-fold--inj"' + (k === 0 ? " open" : "") + '><summary class="gc-fold__sum">GC ppm <span class="gc-fold__n">' + gases.length + "</span></summary>" +
-        '<div class="gc-inj__rows gc-inj__rows--scroll">' + ppm + "</div></details>" +
-        '<svg class="gc-bar" id="gc-b-' + k + '" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"></svg></div>';
+    var liquids = S.products.filter(function (p) { return !isGas(p); });
+    if (injTab >= S.inj.length) injTab = Math.max(0, S.inj.length - 1);
+    var tabs = S.inj.map(function (inj, k) {
+      return '<button type="button" class="gc-inj-tab' + (k === injTab ? " is-active" : "") + '" data-inj-tab="' + k + '" aria-selected="' + (k === injTab) + '">#' + (k + 1) + '<span class="gc-inj-tab__t">' + esc(fmtT(inj.t)) + "</span></button>";
     }).join("");
+    var inj = S.inj[injTab] || { ppm: {} }, k = injTab;
+    var useJ = S.technique === "CP" ? S.cpmode === "j" : S.imode === "j";
+    var phJ = useJ ? "e.g. 100" : "e.g. 10";
+    var cur;
+    if (S.technique === "CP") {
+      var setLab = S.cpmode === "j" ? ("|j| set " + esc(S.jset || "—")) : ("|I| set " + esc(S.Iset || "—"));
+      cur = '<label class="gc-ppm-row gc-ppm-row--cur"><span class="gc-ppm-row__name">E (V vs ref)</span>' +
+        '<input class="input" inputmode="decimal" data-ik="' + k + '" data-f="E" value="' + esc(inj.E == null ? "" : inj.E) + '" placeholder="e.g. −1.00">' +
+        '<span class="gc-cell__out" id="gc-c-' + k + '">' + setLab + "</span></label>";
+    } else {
+      cur = useJ
+        ? '<label class="gc-ppm-row gc-ppm-row--cur"><span class="gc-ppm-row__name">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="' + phJ + '"><span class="gc-cell__out" id="gc-c-' + k + '">I —</span></label>'
+        : '<label class="gc-ppm-row gc-ppm-row--cur"><span class="gc-ppm-row__name">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + phJ + '"><span class="gc-cell__out" id="gc-c-' + k + '">j —</span></label>';
+    }
+    function prodRow(p, kind) {
+      if (kind === "gas") {
+        return '<label class="gc-ppm-row"><span class="gc-ppm-row__name"><span class="gc-dot" style="background:' + p.hex + '"></span><span class="gc-ppm-row__label">' + esc(p.label) + '</span><span class="gc-ppm-row__n">n=' + esc(p.n) + "</span></span>" +
+          '<input class="input" inputmode="decimal" data-ik="' + k + '" data-pid="' + p.id + '" value="' + esc(inj.ppm[p.id] == null ? "" : inj.ppm[p.id]) + '" placeholder="ppm" aria-label="' + esc(p.label) + ' ppm">' +
+          '<span class="gc-ppm-row__out" id="gc-o-' + k + '-' + p.id + '">—</span></label>';
+      }
+      return "";
+    }
+    var gasBlock = gases.length
+      ? '<div class="gc-ppm-group"><div class="gc-ppm-group__h">Gas products (GC ppm)</div>' + gases.map(function (p) { return prodRow(p, "gas"); }).join("") + "</div>"
+      : "";
+    var html = '<div class="gc-inj-panel">' +
+      '<div class="gc-inj-tabs" role="tablist">' + tabs + "</div>" +
+      '<div class="gc-inj" data-k="' + k + '">' +
+      '<div class="gc-inj__top"><span class="gc-inj__title">Injection #' + (k + 1) + "</span>" +
+      '<label class="sr-only" for="gc-t-' + k + '">Injection time (s)</label>' +
+      '<input class="input gc-inj__t" id="gc-t-' + k + '" inputmode="decimal" data-ik="' + k + '" data-f="t" value="' + esc(inj.t) + '" placeholder="t (s)"' + (inj.manual ? "" : " readonly") + ">" +
+      '<span class="gc-inj__tunit" id="gc-tunit-' + k + '">' + esc(fmtT(inj.t)) + "</span>" +
+      '<button type="button" class="gc-edit' + (inj.manual ? " is-on" : "") + '" data-man="' + k + '" aria-pressed="' + !!inj.manual + '" title="Edit time manually">' + (inj.manual ? "manual" : "edit") + "</button>" +
+      '<span class="gc-inj__tot" id="gc-it-' + k + '">—</span>' +
+      '<button type="button" class="gc-x" data-rmi="' + k + '" aria-label="Remove injection">×</button></div>' +
+      '<div class="gc-inj__cur">' + cur + "</div>" +
+      gasBlock +
+      '<svg class="gc-bar" id="gc-b-' + k + '" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"></svg></div></div>';
+    $("gc-injections").innerHTML = html;
   }
   function update() {
     var c = cond();
-    $("gc-I").textContent = c.ok ? sig(c.I_mA, 4) + " mA" : "—";
-    $("gc-ndot").textContent = c.ok ? sig(c.ndot * 1e6, 4) + " µmol s⁻¹" : "—";
     var results = S.inj.map(function (inj) { return compute(inj, c); });
-    var liqRes = computeLiquid(c);
+    var repJ = NaN, repI = NaN;
+    results.forEach(function (r) {
+      if (r && isFinite(r.j) && r.j > 0) { repJ = r.j; repI = r.I_mA; }
+    });
+    var cLiq = { j: isFinite(repJ) ? repJ : NaN, ndot: c.ndot, ok: c.ok };
+    $("gc-I").textContent = isFinite(repI) ? sig(repI, 4) + " mA" : "—";
+    $("gc-ndot").textContent = c.ok ? sig(c.ndot * 1e6, 4) + " µmol s⁻¹" : "—";
+    var liqRes = computeLiquid(cLiq);
     results.forEach(function (r, k) {
       S.products.forEach(function (p) {
         if (!isGas(p)) return;
@@ -1225,7 +1287,7 @@
     if (latest) {
       var tot = latest.r.total;
       $("gc-total").textContent = sig(tot, 3) + " %";
-      $("gc-sum-label").textContent = "t = " + (latest.t || "?") + " min";
+      $("gc-sum-label").textContent = "t = " + fmtT(latest.t);
       $("gc-unacc").textContent = sig(100 - tot, 3) + " %";
       $("gc-sum-bar").innerHTML = barSVG(latest.r, 8);
       $("gc-sum-chips").innerHTML = S.products.map(function (p) {
@@ -1246,38 +1308,47 @@
     }
     // table
     var gases = S.products.filter(isGas);
-    var head = "<tr><th>t_inj (min)</th>" + gases.map(function (p) { return "<th>FE_" + esc(p.name) + " (%)</th>"; }).join("") + "<th>FE_total (%)</th></tr>";
-    var rows = "", sums = {}, cnt = {}, tsum = 0, tc = 0;
-    order.forEach(function (o) {
-      var r = results[o.i]; if (!r.any) return;
-      rows += "<tr><td>" + esc(o.v.t) + "</td>" + gases.map(function (p) {
-        var x = r.per[p.id]; if (x) { sums[p.id] = (sums[p.id] || 0) + x.fe; cnt[p.id] = (cnt[p.id] || 0) + 1; }
-        return "<td>" + (x ? sig(x.fe, 3) : "") + "</td>";
-      }).join("") + '<td class="' + (r.total > 100 ? "warn" : "") + '">' + sig(r.total, 3) + "</td></tr>";
-      tsum += r.total; tc++;
+    /* Product × injection table: sticky product-name column, no name truncation */
+    var head = '<tr><th class="gc-sticky-col">Product</th>' + order.map(function (o, i) {
+      return "<th>#" + (o.i + 1) + "<br><span class=\"gc-th-sub\">" + esc(fmtT(o.v.t)) + "</span></th>";
+    }).join("") + "<th>mean ± SD</th></tr>";
+    var rows = "", tc = 0;
+    order.forEach(function (o) { if (results[o.i].any) tc++; });
+    var AG = tc ? aggregate(order.filter(function (o) { return results[o.i].any; }).map(function (o) { return { t: o.v.t, r: results[o.i] }; }), c) : { per: {}, tot: { fe: { m: NaN, sd: NaN } } };
+    gases.forEach(function (p) {
+      rows += '<tr><th class="gc-sticky-col"><span class="gc-dot" style="background:' + p.hex + '"></span> ' + esc(p.label) + "</th>";
+      order.forEach(function (o) {
+        var x = results[o.i].per[p.id];
+        rows += "<td>" + (x ? sig(x.fe, 3) : "—") + "</td>";
+      });
+      var ax = AG.per[p.id];
+      rows += "<td>" + (ax ? pm({ m: ax.fe, sd: ax.sd_fe }, 3) : "—") + "</td></tr>";
     });
     if (tc) {
-      var AG = aggregate(order.filter(function (o) { return results[o.i].any; }).map(function (o) { return { t: o.v.t, r: results[o.i] }; }), c);
-      rows += '<tr class="avg"><td>mean ± SD (n = ' + tc + ')</td>' + gases.map(function (p) { var x = AG.per[p.id]; return "<td>" + (x ? pm({ m: x.fe, sd: x.sd_fe }, 3) : "") + "</td>"; }).join("") +
-        "<td>" + pm(AG.tot.fe, 3) + "</td></tr>";
+      rows += '<tr class="avg"><th class="gc-sticky-col">Σ FE</th>' + order.map(function (o) {
+        var r = results[o.i];
+        return '<td class="' + (r.any && r.total > 100 ? "warn" : "") + '">' + (r.any ? sig(r.total, 3) : "—") + "</td>";
+      }).join("") + "<td>" + pm(AG.tot.fe, 3) + "</td></tr>";
     }
     var liqKeys = Object.keys(liqRes);
     if (liqKeys.length) {
-      rows += '<tr class="avg"><td>liquid (Q-based)</td>' + gases.map(function () { return "<td></td>"; }).join("") + "<td></td></tr>";
+      rows += '<tr class="avg"><th class="gc-sticky-col">Liquids (Q-based)</th>' + order.map(function () { return "<td></td>"; }).join("") + "<td></td></tr>";
       S.products.filter(function (p) { return !isGas(p) && liqRes[p.id]; }).forEach(function (p) {
         var L = liqRes[p.id];
-        rows += "<tr><td>" + esc(p.label) + "</td>" + gases.map(function () { return "<td></td>"; }).join("") + "<td>" + sig(L.fe, 3) + "</td></tr>";
+        rows += '<tr><th class="gc-sticky-col"><span class="gc-dot" style="background:' + p.hex + '"></span> ' + esc(p.label) + "</th>" +
+          order.map(function () { return "<td>—</td>"; }).join("") + "<td>" + sig(L.fe, 3) + "</td></tr>";
       });
     }
     $("gc-table").innerHTML = "<thead>" + head + "</thead><tbody>" + (rows || '<tr><td colspan="99" style="text-align:left">No data yet</td></tr>') + "</tbody>";
-    renderChart(results, order, c, liqRes);
+    var cChart = { I_A: isFinite(repI) ? repI / 1000 : NaN, I_mA: repI, j: repJ, ndot: c.ndot, ok: c.ok, area: c.area };
+    renderChart(results, order, cChart, liqRes);
     renderIRTable();
-    GC._last = { c: c, results: results, order: order, liq: liqRes };
+    GC._last = { c: cChart, results: results, order: order, liq: liqRes };
     save();
   }
   /* ===== EXPORT TEMPLATE (single source of truth for CSV + XLSX column layout) =====
      Each column: { header, field, perProduct? }.  In headers, {p} → product name (e.g. CO).
-     field ∈ "t" (t_inj, min) | "j" (|j_k|, mA cm^-2) | "I" (I_k, mA) | "ppm" | "fe" (FE_i, %) |
+     field ∈ "t" (t_inj, s) | "j" (|j_k|, mA cm^-2) | "I" (I_k, mA) | "ppm" | "fe" (FE_i, %) |
              "ji" (j_i, mA cm^-2) | "fe_total" (Σ FE, %).
      summaryRows: which stat rows to append after the injection rows ("mean", "SD" = sample SD, n−1).
      To remap to another format, edit only this object. */
@@ -1286,7 +1357,7 @@
     fileStem: "GC_FE",
     sigFigs: 5,
     columns: [
-      { header: "t_inj (min)", field: "t" },
+      { header: "t_inj (s)", field: "t" },
       { header: "E_applied (V)", field: "Eapp" },
       { header: "j (mA cm^-2)", field: "j" },
       { header: "I (mA)", field: "I" },
@@ -1342,26 +1413,33 @@
   function stamp() { return new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-"); }
   function metaRows() {
     var ref = resolveE0();
+    var ci = S.irMode === "ci";
     return [
       ["technique", S.technique],
       ["E_set (V)", S.Eset],
       ["I_set (mA)", S.Iset],
       ["j_set (mA cm^-2)", S.jset],
+      ["current_entry", S.imode],
       ["reference", ref.label],
       ["E0_ref (V vs SHE)", ref.E0],
       ["pH", S.pH],
       ["slope_mode", S.slopeMode],
-      ["ir_mode", S.irMode],
-      ["Ru (ohm)", S.Ru],
-      ["f_comp (%)", S.fComp],
+      ["ir_mode", ci ? "CI" : "manual"],
+      ["Ru (ohm)", ci ? "" : S.Ru],
+      ["f_comp (%)", ci ? "" : S.fComp],
+      ["Ru_unc_note", ci ? "0 (iR-compensated in real time)" : "Ru*(1-f_comp/100)"],
+      ["sched_t1 (s)", S.sched.t1],
+      ["sched_analysis (min)", S.sched.ana],
+      ["sched_post (s)", S.sched.post],
       ["area (cm2)", S.area],
       ["flow (sccm)", S.flow],
       ["T (K)", S.T],
       ["P (Pa)", S.P],
       ["notes", S.notes || ""],
-      ["formula_E_corr", "E_corr = E_applied + |I|*Ru_unc  (cathodic; equiv. E_app - I_signed*Ru_unc)"],
-      ["formula_Ru_unc", "Ru_unc = Ru*(1 - f_comp/100); skip if f_comp = 100%"],
-      ["formula_E_RHE", "E_RHE = E_corr + E0_ref + slope*pH"]
+      ["formula_E_corr", ci ? "CI: E_corr = E_applied (Ru_unc = 0)" : "E_corr = E_applied + |I|*Ru_unc  (cathodic; equiv. E_app - I_signed*Ru_unc)"],
+      ["formula_Ru_unc", ci ? "Ru_unc = 0 (CI real-time)" : "Ru_unc = Ru*(1 - f_comp/100); skip if f_comp = 100%"],
+      ["formula_E_RHE", "E_RHE = E_corr + E0_ref + slope*pH"],
+      ["formula_sched", "t_k (s) = t1_s + (k-1)*(analysis_min*60 + postrun_s)"]
     ];
   }
   function csv() {
@@ -1387,7 +1465,7 @@
     dl(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), EXPORT_TEMPLATE.fileStem + "_" + stamp() + ".xlsx");
   }
   function syncControls() {
-    ["j", "area", "Itot", "flow", "T", "P", "Eset", "Iset", "jset", "E0", "pH", "Ru", "fComp"].forEach(function (k) {
+    ["area", "flow", "T", "P", "Eset", "Iset", "jset", "E0", "pH", "Ru", "fComp"].forEach(function (k) {
       var el = $("gc-" + k); if (el && S[k] != null) el.value = S[k];
     });
     var notes = $("gc-notes"); if (notes) notes.value = S.notes || "";
@@ -1399,8 +1477,9 @@
     document.querySelectorAll("#gc-cpmode .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.cpmode); });
     document.querySelectorAll("#gc-irmode .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.irMode); });
     document.querySelectorAll("#gc-slope .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === S.slopeMode); });
-    document.querySelectorAll(".gc-j").forEach(function (e) { e.hidden = S.imode !== "j"; });
-    var gi = document.querySelector(".gc-i"); if (gi) gi.hidden = S.imode !== "I";
+    var ci = S.irMode === "ci";
+    document.querySelectorAll(".gc-ir-manual").forEach(function (e) { e.hidden = ci; });
+    var cin = $("gc-ir-ci-note"); if (cin) cin.hidden = !ci;
     document.querySelectorAll(".gc-tp").forEach(function (e) { e.hidden = S.ref === "std"; });
     document.querySelectorAll(".gc-ca-only").forEach(function (e) { e.hidden = S.technique === "CP"; });
     document.querySelectorAll(".gc-cp-only").forEach(function (e) { e.hidden = S.technique !== "CP"; });
@@ -1411,6 +1490,10 @@
     if (help) help.textContent = S.technique === "CP"
       ? "CP: apply a fixed current; measure potential at each GC injection."
       : "CA: apply a fixed potential; measure current at each GC injection.";
+    var irSum = $("gc-ir-summary");
+    if (irSum) irSum.textContent = ci
+      ? "Current interrupt: iR-compensated in real time (CI). E_corr = E_applied (Ru_unc = 0), then convert to RHE with the chosen reference and measured pH."
+      : "At each GC injection, E_corr = E_applied − I·Ru_uncorrected (cathodic I negative), then convert to RHE with the chosen reference and measured pH.";
   }
   function syncSched() { ["t1", "ana", "post", "count"].forEach(function (f) { $("gc-s-" + f).value = S.sched[f]; }); }
   /* —— Guided / Expert UI —— */
@@ -1418,9 +1501,9 @@
   var WIZ_HINTS = {
     1: "Choose CA (fix E, measure I) or CP (fix I, measure E).",
     2: "Enter measured electrolyte pH for RHE conversion (optional).",
-    3: "Pick iR mode and enter Ru / % compensated (Faraday correction).",
+    3: "CI = real-time (no Ru entry). Manual = enter Ru / % compensated.",
     4: "Geometric area, CO₂ flow, and T/P for molar flow.",
-    5: "GC timing — injection times fill automatically.",
+    5: "t₁ & post-run in seconds; analysis in minutes. Times show s and min.",
     6: "Read chrono values at each injection time from the plot.",
     7: "Confirm products and enter GC ppm (and liquid μM / Q).",
     8: "Review FE, iR-corrected potentials, chart, notes, and export."
@@ -1459,7 +1542,7 @@
   function renderSchedPreview() {
     var el = $("gc-sched-preview"); if (!el) return;
     applySched();
-    var times = S.inj.map(function (r, i) { return "#" + (i + 1) + " → " + (r.t || "?") + " min"; });
+    var times = S.inj.map(function (r, i) { return "#" + (i + 1) + " → " + fmtT(r.t); });
     el.textContent = times.length ? ("Auto times: " + times.join(" · ")) : "Enter schedule values to preview times.";
   }
   function renderCurrentStep() {
@@ -1468,23 +1551,23 @@
     var ca = S.technique !== "CP";
     var desc = $("gc-chrono-desc");
     if (desc) desc.textContent = ca
-      ? "CA: enter measured |j| or |I| from the chronoamperogram at each injection. E is the applied setpoint."
-      : "CP: enter measured E (V vs ref) from the chronopotentiogram. Current is prefilled from the setpoint.";
-    var useJ = S.imode === "j" || (S.technique === "CP" && S.cpmode === "j");
+      ? "CA: enter measured |j| or |I| at each injection (no global default). Empty → blank FE for that point."
+      : "CP: enter measured E (V vs ref). Current is prefilled from the step-1 setpoint.";
+    var useJ = S.imode === "j";
     box.innerHTML = S.inj.map(function (inj, k) {
       var cur;
       if (ca) {
         cur = useJ
-          ? '<label class="field" style="margin:0"><span class="field__label">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="' + esc(S.j) + '"></label>'
-          : '<label class="field" style="margin:0"><span class="field__label">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"></label>';
+          ? '<label class="field" style="margin:0"><span class="field__label">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="e.g. 100"></label>'
+          : '<label class="field" style="margin:0"><span class="field__label">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="e.g. 10"></label>';
         cur += '<span class="gc-cell__out">E<sub>app</sub> ' + esc(S.Eset || "—") + " V</span>";
       } else {
         var phJ = S.cpmode === "j" ? esc(S.jset) : esc(S.Iset);
         var lab = S.cpmode === "j" ? "|j| set" : "|I| set";
-        cur = '<label class="field" style="margin:0"><span class="field__label">E (V vs ref)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="E" value="' + esc(inj.E == null ? "" : inj.E) + '" placeholder="' + esc(S.Eset) + '"></label>' +
+        cur = '<label class="field" style="margin:0"><span class="field__label">E (V vs ref)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="E" value="' + esc(inj.E == null ? "" : inj.E) + '" placeholder="e.g. −1.00"></label>' +
           '<span class="gc-cell__out">' + lab + " " + phJ + "</span>";
       }
-      return '<div class="gc-cur-row" data-k="' + k + '"><span class="gc-cur-row__t">t=' + esc(inj.t || "?") + "</span>" + cur +
+      return '<div class="gc-cur-row" data-k="' + k + '"><span class="gc-cur-row__t">' + esc(fmtT(inj.t)) + "</span>" + cur +
         '<span class="gc-cell__out" id="gc-cur-out-' + k + '">—</span></div>';
     }).join("");
     renderIRTable();
@@ -1496,14 +1579,12 @@
       var rc = rowCur(inj, c), ir = computeIRRow(inj, rc);
       if (isFinite(ir.E_corr)) er.push(ir.E_corr);
       if (isFinite(ir.E_RHE)) rr.push(ir.E_RHE);
-      rows += "<tr><td>" + esc(inj.t) + "</td><td>" + sig(ir.E_applied, 4) + "</td><td>" + sig(ir.I_mA, 4) + "</td><td>" + sig(ir.Ru_unc, 4) + "</td><td>" + sig(ir.E_corr, 4) + "</td><td>" + (isFinite(ir.E_RHE) ? sig(ir.E_RHE, 4) : "—") + "</td></tr>";
+      rows += "<tr><td>" + esc(fmtT(inj.t)) + "</td><td>" + sig(ir.E_applied, 4) + "</td><td>" + sig(ir.I_mA, 4) + "</td><td>" + (ir.ci ? "0 (CI)" : sig(ir.Ru_unc, 4)) + "</td><td>" + sig(ir.E_corr, 4) + "</td><td>" + (isFinite(ir.E_RHE) ? sig(ir.E_RHE, 4) : "—") + "</td></tr>";
     });
     var em = mstat(er), rm = mstat(rr);
-    tbl.querySelector("thead").innerHTML = "<tr><th>t (min)</th><th>E_app (V)</th><th>|I| (mA)</th><th>Ru_unc (Ω)</th><th>E_corr vs ref</th><th>E_corr vs RHE</th></tr>";
+    tbl.querySelector("thead").innerHTML = "<tr><th>t</th><th>E_app (V)</th><th>|I| (mA)</th><th>Ru_unc (Ω)</th><th>E_corr vs ref</th><th>E_corr vs RHE</th></tr>";
     tbl.querySelector("tbody").innerHTML = rows +
       (er.length ? '<tr class="avg"><td>mean ± SD</td><td></td><td></td><td></td><td>' + pm(em, 4) + "</td><td>" + (rr.length ? pm(rm, 4) : "—") + "</td></tr>" : "");
-    var sum = $("gc-ir-summary");
-    if (sum) sum.textContent = "At each GC injection, E_corr = E_applied − I·Ru_uncorrected (cathodic I negative), then convert to RHE with the chosen reference and measured pH.";
   }
   function validateWizStep(n, soft) {
     var warn = $("gc-wiz-warn"), msg = "";
@@ -1512,15 +1593,17 @@
       else if (S.technique === "CP" && S.cpmode === "I" && !(pnum(S.Iset) > 0)) msg = "Enter the applied |I| for CP.";
       else if (S.technique === "CP" && S.cpmode === "j" && !(pnum(S.jset) > 0)) msg = "Enter the applied |j| for CP.";
     } else if (n === 3) {
-      var f = pnum(S.fComp); if (!isFinite(f)) f = 0;
-      if (f < 100 && !(pnum(S.Ru) >= 0 && isFinite(pnum(S.Ru)))) msg = "Enter Ru (Ω), or set % compensated to 100 to skip iR correction.";
+      if (S.irMode !== "ci") {
+        var f = pnum(S.fComp); if (!isFinite(f)) f = 0;
+        if (f < 100 && !(pnum(S.Ru) >= 0 && isFinite(pnum(S.Ru)))) msg = "Enter Ru (Ω), or set % compensated to 100 to skip iR correction.";
+      }
     } else if (n === 4) {
       if (!(pnum(S.area) > 0)) msg = "Enter a geometric area greater than 0 cm².";
       else if (!(pnum(S.flow) > 0)) msg = "Enter a CO₂ flow greater than 0 sccm.";
     } else if (n === 5) {
-      if (!isFinite(pnum(S.sched.t1))) msg = "Enter the time of the first injection (min).";
+      if (!isFinite(pnum(S.sched.t1)) || pnum(S.sched.t1) < 0) msg = "Enter the time of the first injection (s).";
       else if (!isFinite(pnum(S.sched.ana)) || pnum(S.sched.ana) < 0) msg = "Enter GC analysis time (min).";
-      else if (!isFinite(pnum(S.sched.post)) || pnum(S.sched.post) < 0) msg = "Enter post-run time (min).";
+      else if (!isFinite(pnum(S.sched.post)) || pnum(S.sched.post) < 0) msg = "Enter post-run time (s).";
     } else if (n === 6) {
       var c = cond(), ok = false;
       if (S.technique === "CP") ok = S.inj.some(function (inj) { return isFinite(pnum(inj.E)); });
@@ -1608,11 +1691,8 @@
       el.addEventListener("input", function (e) { S[key] = e.target.value; if (cb) cb(); else { syncControls(); renderCurrentStep(); update(); } });
       el.addEventListener("change", function (e) { S[key] = e.target.value; if (cb) cb(); else { syncControls(); renderCurrentStep(); update(); } });
     }
-    ["j", "area", "Itot", "flow", "T", "P", "Eset", "Iset", "jset", "E0", "pH", "Ru", "fComp"].forEach(function (k) {
-      bindVal("gc-" + k, k, function () {
-        if (k === "j" || k === "Itot") document.querySelectorAll('[data-f="' + (k === "j" ? "j" : "I") + '"]').forEach(function (i) { i.placeholder = S[k]; });
-        renderCurrentStep(); update();
-      });
+    ["area", "flow", "T", "P", "Eset", "Iset", "jset", "E0", "pH", "Ru", "fComp"].forEach(function (k) {
+      bindVal("gc-" + k, k, function () { renderCurrentStep(); update(); });
     });
     bindVal("gc-notes", "notes", function () { save(); });
     ["gc-eref", "gc-eref-cp"].forEach(function (id) {
@@ -1673,12 +1753,21 @@
     $("gc-injections").addEventListener("input", function (e) {
       var k = e.target.dataset.ik; if (k == null) return;
       var f = e.target.dataset.f;
-      if (f === "t" || f === "j" || f === "I") S.inj[k][f] = e.target.value; else S.inj[k].ppm[e.target.dataset.pid] = e.target.value;
+      if (f === "t" || f === "j" || f === "I" || f === "E") {
+        S.inj[k][f] = e.target.value;
+        if (f === "t") { var u = $("gc-tunit-" + k); if (u) u.textContent = fmtT(e.target.value); }
+      } else if (e.target.dataset.pid) S.inj[k].ppm[e.target.dataset.pid] = e.target.value;
       update();
     });
     $("gc-injections").addEventListener("click", function (e) {
+      var tab = e.target.closest("[data-inj-tab]");
+      if (tab) { injTab = parseInt(tab.getAttribute("data-inj-tab"), 10) || 0; renderInj(); update(); return; }
       var k = e.target.dataset.rmi;
-      if (k != null && S.inj.length > 1) { S.inj.splice(k, 1); S.sched.count = S.inj.length; syncSched(); applySched(); renderInj(); update(); return; }
+      if (k != null && S.inj.length > 1) {
+        S.inj.splice(k, 1); S.sched.count = S.inj.length;
+        if (injTab >= S.inj.length) injTab = S.inj.length - 1;
+        syncSched(); applySched(); renderInj(); update(); return;
+      }
       var m = e.target.dataset.man;
       if (m != null) { S.inj[m].manual = !S.inj[m].manual; applySched(); renderInj(); update(); }
     });
@@ -1687,8 +1776,9 @@
     });
     $("gc-add-inj").addEventListener("click", function () {
       if (S.inj.length >= 6) return;
-      S.sched.count = S.inj.length + 1; syncSched(); applySched(); renderInj(); update();
-      var el = document.querySelector('.gc-inj[data-k="' + (S.inj.length - 1) + '"] input[data-pid]'); if (el) el.focus();
+      S.sched.count = S.inj.length + 1; syncSched(); applySched();
+      injTab = S.inj.length - 1; renderInj(); update();
+      var el = document.querySelector(".gc-inj input[data-pid]"); if (el) el.focus();
     });
     $("gc-csv").addEventListener("click", csv);
     $("gc-xlsx").addEventListener("click", xlsx);
@@ -1703,6 +1793,8 @@
     $("gc-reset").addEventListener("click", function () { if (confirm("Clear all GC inputs?")) { S = defaults(); full(); } });
     full();
     if (getUiMode() === "guided") setWizStep(1);
+    var wm = typeof location !== "undefined" && location.hash.match(/(?:^#|[?&,])wiz[=:](\d+)/);
+    if (wm) setWizStep(parseInt(wm[1], 10));
   }
   GC.load = function (state) { S = state; full(); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();

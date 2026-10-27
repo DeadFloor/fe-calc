@@ -160,16 +160,6 @@
                 </select>
               </label>
             </div>
-            <div class="field gc-wide">
-              <span class="field__label">How measured current is entered (for FE)</span>
-              <div class="seg" role="radiogroup" id="gc-imode">
-                <button type="button" class="seg__btn is-active" data-v="j">j × area</button>
-                <button type="button" class="seg__btn" data-v="I">Total I</button>
-              </div>
-              <p class="field__help">Used for Faradaic efficiency. CA: enter measured j or I per injection. CP: setpoint fills current; you enter measured E.</p>
-            </div>
-            <label class="field gc-j"><span class="field__label">Default |j| (mA cm⁻²)</span><input class="input" inputmode="decimal" id="gc-j" value="100"></label>
-            <label class="field gc-i" hidden><span class="field__label">Default |I| (mA)</span><input class="input" inputmode="decimal" id="gc-Itot" value="100"></label>
           </div>
         </article>
 
@@ -199,16 +189,17 @@
           </header>
           <div class="gc-grid">
             <div class="field gc-wide">
-              <span class="field__label">Compensation mode <button type="button" class="info-i" data-info="Current interrupt: Ru from the potentiostat CI measurement. Manual: enter Ru yourself (same correction math)." aria-label="About iR mode">i</button></span>
+              <span class="field__label">Compensation mode <button type="button" class="info-i" data-info="Current interrupt (CI): the potentiostat compensates iR in real time — no post-run correction (E_corr = E_applied, Ru_unc = 0). Manual: enter Ru and % compensated; E_corr = E_applied + |I|·Ru_unc (cathodic)." aria-label="About iR mode">i</button></span>
               <div class="seg" role="radiogroup" id="gc-irmode">
                 <button type="button" class="seg__btn is-active" data-v="ci">Current interrupt</button>
                 <button type="button" class="seg__btn" data-v="manual">Manual</button>
               </div>
             </div>
-            <label class="field"><span class="field__label">Ru (Ω) <button type="button" class="info-i" data-info="Uncompensated resistance before fractional compensation. Ru_unc = Ru·(1 − f_comp/100)." aria-label="About Ru">i</button></span><input class="input" inputmode="decimal" id="gc-Ru" placeholder="e.g. 12"><span class="field__help">From CI readout or EIS / manual estimate.</span></label>
-            <label class="field"><span class="field__label">% compensated during run <button type="button" class="info-i" data-info="Fraction already compensated by the potentiostat (0–95%). If 100%, iR correction is skipped. Default 0." aria-label="About f_comp">i</button></span><input class="input" inputmode="decimal" id="gc-fComp" value="0"><span class="field__help">Capped at 95% in the correction; enter 100 to skip.</span></label>
+            <p class="gc-wide gc-ir-ci-note" id="gc-ir-ci-note">iR-compensated in real time (CI) — E_corr = E_applied (Ru_unc = 0). No post-run correction.</p>
+            <label class="field gc-ir-manual"><span class="field__label">Ru (Ω) <button type="button" class="info-i" data-info="Uncompensated resistance before fractional compensation. Ru_unc = Ru·(1 − f_comp/100). Manual mode only." aria-label="About Ru">i</button></span><input class="input" inputmode="decimal" id="gc-Ru" placeholder="e.g. 12"><span class="field__help">From EIS / manual estimate.</span></label>
+            <label class="field gc-ir-manual"><span class="field__label">% compensated during run <button type="button" class="info-i" data-info="Fraction already compensated by the potentiostat (0–95%). If 100%, iR correction is skipped. Manual mode only." aria-label="About f_comp">i</button></span><input class="input" inputmode="decimal" id="gc-fComp" value="0"><span class="field__help">Capped at 95% in the correction; enter 100 to skip.</span></label>
             <p class="gc-wide gc-ir-summary" id="gc-ir-summary">At each GC injection, E_corr = E_applied − I·Ru_uncorrected (cathodic I negative), then convert to RHE with the chosen reference and measured pH.</p>
-            <p class="gc-wide gc-hint">Ru_unc = Ru·(1 − f_comp). With |I| stored for cathodic runs: E_corr = E_applied + |I|·Ru_unc.</p>
+            <p class="gc-wide gc-hint gc-ir-manual">Ru_unc = Ru·(1 − f_comp). With |I| stored for cathodic runs: E_corr = E_applied + |I|·Ru_unc.</p>
           </div>
         </article>
 
@@ -237,13 +228,13 @@
         <article class="calc-card" data-wiz="5" id="gc-step-sched">
           <header class="calc-card__header">
             <h2 class="calc-card__title">5 · GC injection schedule</h2>
-            <p class="calc-card__desc">Times auto-fill from the first injection, analysis length, and post-run.</p>
+            <p class="calc-card__desc">t₁ and post-run in seconds; GC analysis in minutes. Auto times show both s and min.</p>
           </header>
           <div class="gc-grid gc-sched">
-            <label class="field"><span class="field__label">Time of 1st injection (min)</span><input class="input" inputmode="decimal" id="gc-s-t1"><span class="field__help">Example: 15 min.</span></label>
-            <label class="field"><span class="field__label">GC analysis time (min)</span><input class="input" inputmode="decimal" id="gc-s-ana"></label>
-            <label class="field"><span class="field__label">Post-run time (min)</span><input class="input" inputmode="decimal" id="gc-s-post"></label>
-            <label class="field"><span class="field__label">Number of injections (1–6)</span><input class="input" type="number" min="1" max="6" step="1" inputmode="numeric" id="gc-s-count"><span class="field__help">t<sub>k</sub> = t<sub>1</sub> + (k−1)·(analysis + post-run).</span></label>
+            <label class="field"><span class="field__label">Time of 1st injection (s) <button type="button" class="info-i" data-info="Elapsed electrolysis time at the first GC injection, in seconds. Example: 900 s = 15 min." aria-label="About t1">i</button></span><input class="input" inputmode="decimal" id="gc-s-t1" placeholder="e.g. 900"><span class="field__help">Example: 900 s (15 min).</span></label>
+            <label class="field"><span class="field__label">GC analysis time (min) <button type="button" class="info-i" data-info="GC method length in minutes. Converted to seconds in the schedule: interval = analysis_min·60 + post_s." aria-label="About analysis">i</button></span><input class="input" inputmode="decimal" id="gc-s-ana" placeholder="e.g. 12"></label>
+            <label class="field"><span class="field__label">Post-run time (s) <button type="button" class="info-i" data-info="Idle / purge / wait after each GC analysis, in seconds, before the next injection window." aria-label="About post-run">i</button></span><input class="input" inputmode="decimal" id="gc-s-post" placeholder="e.g. 180"><span class="field__help">Example: 180 s (3 min).</span></label>
+            <label class="field"><span class="field__label">Number of injections (1–6)</span><input class="input" type="number" min="1" max="6" step="1" inputmode="numeric" id="gc-s-count"><span class="field__help">t<sub>k</sub> (s) = t<sub>1</sub> + (k−1)·(analysis_min·60 + post_s).</span></label>
           </div>
           <div class="gc-sched-preview" id="gc-sched-preview" aria-live="polite"></div>
         </article>
@@ -254,6 +245,13 @@
             <h2 class="calc-card__title">6 · Chrono values at each injection</h2>
             <p class="calc-card__desc" id="gc-chrono-desc">CA: enter measured |j| or |I| from the chronoamperogram. CP: enter measured E; current is prefilled from the setpoint.</p>
           </header>
+          <div class="gc-imode-bar gc-ca-only" id="gc-imode-bar">
+            <span class="field__label">Enter current as</span>
+            <div class="seg seg--compact" role="radiogroup" id="gc-imode" aria-label="Current unit for FE">
+              <button type="button" class="seg__btn is-active" data-v="j">j (mA cm⁻²)</button>
+              <button type="button" class="seg__btn" data-v="I">Total I (mA)</button>
+            </div>
+          </div>
           <div id="gc-current-step" class="gc-current-step"></div>
           <div class="gc-table-wrap" style="padding-top:8px"><table class="gc-table" id="gc-ir-table"><thead></thead><tbody></tbody></table></div>
         </article>
@@ -327,7 +325,7 @@
           </div>
           <details class="gc-formula">
             <summary>Formulas &amp; constants</summary>
-            <p><code>t_k = t_1 + (k − 1)·(t_analysis + t_post)</code></p>
+            <p><code>t_k (s) = t1_s + (k − 1)·(analysis_min·60 + postrun_s)</code></p>
             <p><code>I_k = |j_k| · A</code> (FE uses magnitude; iR uses cathodic-negative convention)</p>
             <p><code>ṅ_gas = P · (Q_mL/min · 10⁻⁶ / 60) / (R · T)</code>; <code>FE_i = n_i · F · ṅ_i / I · 100</code>; <code>j_i = FE_i/100 · |j_k|</code></p>
             <p><strong>iR / RHE (Faraday):</strong> <code>Ru_unc = Ru·(1 − f_comp)</code>; with signed cathodic I: <code>E_corr = E_applied − I·Ru_unc</code>; equivalent with stored |I|: <code>E_corr = E_applied + |I|·Ru_unc</code>. If f_comp = 100%, skip correction. <code>E_RHE = E_corr + E°_ref + slope·pH</code>.</p>
