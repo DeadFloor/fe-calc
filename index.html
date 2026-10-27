@@ -67,8 +67,32 @@
       </nav>
 
       <!-- 0. GC ONLINE FE (ppm-based) -->
-      <section class="calc-section is-active" id="section-gc" role="tabpanel" aria-labelledby="tab-gc" data-section="gc">
-        <div class="gc-summary" id="gc-summary" aria-live="polite">
+      <section class="calc-section is-active" id="section-gc" role="tabpanel" aria-labelledby="tab-gc" data-section="gc" data-ui-mode="guided" data-wiz-step="1">
+        <div class="gc-modebar">
+          <div class="seg" id="gc-ui-mode" role="radiogroup" aria-label="Input mode">
+            <button type="button" class="seg__btn is-active" data-v="guided">Guided</button>
+            <button type="button" class="seg__btn" data-v="expert">Expert</button>
+          </div>
+          <p class="gc-modebar__hint" id="gc-mode-hint">Step-by-step for first-time eCO₂R users. Switch to Expert anytime.</p>
+        </div>
+
+        <div class="gc-wizard" id="gc-wizard" aria-label="Guided setup">
+          <ol class="gc-wiz-progress" id="gc-wiz-progress">
+            <li class="is-active" data-s="1"><span>1</span> Cell</li>
+            <li data-s="2"><span>2</span> Schedule</li>
+            <li data-s="3"><span>3</span> Current</li>
+            <li data-s="4"><span>4</span> Products</li>
+            <li data-s="5"><span>5</span> Results</li>
+          </ol>
+          <p class="gc-wiz-hint" id="gc-wiz-step-hint"></p>
+          <p class="gc-wiz-warn" id="gc-wiz-warn" hidden></p>
+          <div class="gc-wiz-nav">
+            <button type="button" class="btn btn--ghost" id="gc-wiz-back" disabled>Back</button>
+            <button type="button" class="btn btn--cta" id="gc-wiz-next">Next</button>
+          </div>
+        </div>
+
+        <div class="gc-summary" id="gc-summary" aria-live="polite" data-wiz="5">
           <div class="gc-summary__main">
             <span class="gc-summary__label">Total FE · <span id="gc-sum-label">latest injection</span></span>
             <span class="gc-summary__value" id="gc-total">—</span>
@@ -83,51 +107,68 @@
           <p class="gc-flag" id="gc-flag" hidden></p>
         </div>
 
-        <article class="calc-card">
+        <article class="calc-card" data-wiz="1" id="gc-step-cell">
           <header class="calc-card__header">
-            <h2 class="calc-card__title">Cell &amp; gas conditions</h2>
-            <p class="calc-card__desc">Online GC: FE from product ppm in the CO₂ outlet stream. Results update as you type.</p>
+            <h2 class="calc-card__title">1 · Cell &amp; gas setup</h2>
+            <p class="calc-card__desc">Geometric area and CO₂ outlet flow set the scale for online FE. Defaults match a typical H-cell / flow cell.</p>
           </header>
           <div class="gc-grid">
             <div class="field gc-wide">
-              <span class="field__label">Current input</span>
+              <span class="field__label">How will you enter current? <button type="button" class="info-i" data-info="Choose |j|×area if you read current density from the chronopotentiogram/amperogram. Choose Total I if you prefer absolute current in mA." aria-label="About current input">i</button></span>
               <div class="seg" role="radiogroup" id="gc-imode">
                 <button type="button" class="seg__btn is-active" data-v="j">j × area</button>
                 <button type="button" class="seg__btn" data-v="I">Total I</button>
               </div>
+              <p class="field__help">You will enter each injection’s value in step 3. A global default can fill blank rows.</p>
             </div>
-            <label class="field gc-j"><span class="field__label">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" id="gc-j" value="100"></label>
-            <label class="field gc-j"><span class="field__label">Geometric area (cm²)</span><input class="input" inputmode="decimal" id="gc-area" value="1"></label>
-            <label class="field gc-i" hidden><span class="field__label">|I| (mA)</span><input class="input" inputmode="decimal" id="gc-Itot" value="100"></label>
-            <label class="field"><span class="field__label">CO₂ flow (sccm = mL min⁻¹)</span><input class="input" inputmode="decimal" id="gc-flow" value="20"></label>
+            <label class="field gc-j"><span class="field__label">Default |j| (mA cm⁻²) <button type="button" class="info-i" data-info="Fallback current density when an injection row is left blank. Read |j| from your chronoamperogram or chronopotentiogram at each injection time." aria-label="About default j">i</button></span><input class="input" inputmode="decimal" id="gc-j" value="100"><span class="field__help">Typical lab range 10–200 mA cm⁻².</span></label>
+            <label class="field gc-j"><span class="field__label">Geometric area (cm²) <button type="button" class="info-i" data-info="Exposed geometric electrode area (not ECSA). Measure from the catalyst spot or gasket opening." aria-label="About area">i</button></span><input class="input" inputmode="decimal" id="gc-area" value="1"><span class="field__help">Often 1 cm² for lab electrodes.</span></label>
+            <label class="field gc-i" hidden><span class="field__label">Default |I| (mA) <button type="button" class="info-i" data-info="Fallback total current when an injection row is left blank." aria-label="About default I">i</button></span><input class="input" inputmode="decimal" id="gc-Itot" value="100"><span class="field__help">Absolute current from the potentiostat.</span></label>
+            <label class="field"><span class="field__label">CO₂ flow (sccm = mL min⁻¹) <button type="button" class="info-i" data-info="Volumetric CO₂ feed (and assumed outlet) flow rate from your MFC setpoint. Online FE treats outlet ≈ inlet." aria-label="About CO2 flow">i</button></span><input class="input" inputmode="decimal" id="gc-flow" value="20"><span class="field__help">Common values 10–30 sccm.</span></label>
             <div class="field gc-wide">
-              <span class="field__label">Flow reference</span>
+              <span class="field__label">Flow reference <button type="button" class="info-i" data-info="Standard uses T = 273.15 K and P = 101325 Pa for the ideal-gas molar flow. Custom lets you enter the gas temperature and pressure at the flow meter." aria-label="About flow reference">i</button></span>
               <div class="seg" role="radiogroup" id="gc-ref">
                 <button type="button" class="seg__btn is-active" data-v="std">Standard (273.15 K, 1 atm)</button>
                 <button type="button" class="seg__btn" data-v="custom">Custom T, P</button>
               </div>
             </div>
-            <label class="field gc-tp"><span class="field__label">Gas T (K)</span><input class="input" inputmode="decimal" id="gc-T" value="298.15"></label>
-            <label class="field gc-tp"><span class="field__label">Gas P (Pa)</span><input class="input" inputmode="decimal" id="gc-P" value="101325"></label>
+            <label class="field gc-tp"><span class="field__label">Gas T (K)</span><input class="input" inputmode="decimal" id="gc-T" value="298.15"><span class="field__help">Temperature used for ṅ_gas.</span></label>
+            <label class="field gc-tp"><span class="field__label">Gas P (Pa)</span><input class="input" inputmode="decimal" id="gc-P" value="101325"><span class="field__help">Pressure used for ṅ_gas (1 atm = 101325 Pa).</span></label>
           </div>
         </article>
 
-        <article class="calc-card">
+        <article class="calc-card" data-wiz="2" id="gc-step-sched">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">2 · GC injection schedule</h2>
+            <p class="calc-card__desc">Times auto-fill from the first injection, analysis length, and post-run. Override any row later with “edit”.</p>
+          </header>
+          <div class="gc-grid gc-sched">
+            <label class="field"><span class="field__label">Time of 1st injection (min) <button type="button" class="info-i" data-info="Electrolysis time when the first GC sample is taken (often after a delay for gas transit)." aria-label="About first injection">i</button></span><input class="input" inputmode="decimal" id="gc-s-t1"><span class="field__help">Example: 15 min.</span></label>
+            <label class="field"><span class="field__label">GC analysis time (min) <button type="button" class="info-i" data-info="Length of one GC run (chromatogram) before the next injection can start." aria-label="About analysis time">i</button></span><input class="input" inputmode="decimal" id="gc-s-ana"><span class="field__help">From your GC method.</span></label>
+            <label class="field"><span class="field__label">Post-run time (min) <button type="button" class="info-i" data-info="Oven cool-down / equilibration after each chromatogram before the next injection." aria-label="About post-run">i</button></span><input class="input" inputmode="decimal" id="gc-s-post"><span class="field__help">Often a few minutes.</span></label>
+            <label class="field"><span class="field__label">Number of injections (1–6) <button type="button" class="info-i" data-info="How many GC samples you will average. Three or four is common." aria-label="About injection count">i</button></span><input class="input" type="number" min="1" max="6" step="1" inputmode="numeric" id="gc-s-count"><span class="field__help">t<sub>k</sub> = t<sub>1</sub> + (k−1)·(analysis + post-run).</span></label>
+          </div>
+          <div class="gc-sched-preview" id="gc-sched-preview" aria-live="polite"></div>
+        </article>
+
+        <article class="calc-card" data-wiz="3" id="gc-step-current">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">3 · Current at each injection</h2>
+            <p class="calc-card__desc">Read |j| or |I| from the chronoamperogram / chronopotentiogram at each injection time. Blank uses the step‑1 default.</p>
+          </header>
+          <div id="gc-current-step" class="gc-current-step"></div>
+        </article>
+
+        <article class="calc-card" data-wiz="4" id="gc-step-products">
           <header class="calc-card__header gc-head">
-            <h2 class="calc-card__title">Injections</h2>
+            <h2 class="calc-card__title">4 · Products &amp; amounts</h2>
             <div class="gc-actions">
               <button type="button" class="btn btn--cta" id="gc-add-inj">+ Injection</button>
             </div>
           </header>
-          <div class="gc-grid gc-sched">
-            <label class="field"><span class="field__label">Time of 1st injection (min)</span><input class="input" inputmode="decimal" id="gc-s-t1"></label>
-            <label class="field"><span class="field__label">GC analysis time (min)</span><input class="input" inputmode="decimal" id="gc-s-ana"></label>
-            <label class="field"><span class="field__label">Post-run time (min)</span><input class="input" inputmode="decimal" id="gc-s-post"></label>
-            <label class="field"><span class="field__label">Number of injections (1–6)</span><input class="input" type="number" min="1" max="6" step="1" inputmode="numeric" id="gc-s-count"></label>
-            <p class="gc-wide gc-hint">t<sub>k</sub> = t<sub>1</sub> + (k − 1)·(t<sub>analysis</sub> + t<sub>post-run</sub>). Times are auto-filled; tap “edit” on a row to override. Enter each row’s |j| from the chronoamperogram/chronopotentiogram (blank = global value).</p>
-          </div>
+          <p class="calc-card__desc" style="padding:0 var(--space-5)">Confirm the product list (full C1–C6 set is preselected), then enter GC ppm per injection. Liquid products use μM, electrolyte volumes, and total charge Q.</p>
           <div class="gc-prodbar">
-            <span class="field__label">Products</span>
+            <span class="field__label">Products <button type="button" class="info-i" data-info="Gas products come from online GC (ppm). Liquid products (formate, alcohols, …) come from HPLC / headspace GC as μM in catholyte and anolyte." aria-label="About products">i</button></span>
             <div class="gc-presets" id="gc-presets">
               <button type="button" class="chip-btn" data-p="H2">+ H₂</button>
               <button type="button" class="chip-btn" data-p="CO">+ CO</button>
@@ -146,7 +187,7 @@
           <div id="gc-liquid" class="gc-liquid" hidden></div>
         </article>
 
-        <article class="calc-card" id="gc-chart-card">
+        <article class="calc-card" id="gc-chart-card" data-wiz="5">
           <header class="calc-card__header gc-head">
             <h2 class="calc-card__title">Product distribution</h2>
             <div class="gc-toggles"><div class="seg gc-chart-mode" id="gc-chart-view" role="radiogroup" aria-label="Chart view">
@@ -168,7 +209,7 @@
           </div>
         </article>
 
-        <article class="calc-card">
+        <article class="calc-card" data-wiz="5">
           <header class="calc-card__header gc-head">
             <h2 class="calc-card__title">Results table</h2>
             <div class="gc-actions">
@@ -186,6 +227,7 @@
             <p><code>ṅ_i = (ppm_i · 10⁻⁶) · ṅ_gas</code></p>
             <p><code>FE_i (%) = n_i · F · ṅ_i / I · 100</code></p>
             <p><code>j_i = FE_i/100 · |j_k|</code>; averages are arithmetic mean ± sample SD (n − 1) of the per-injection values</p>
+            <p>Liquid: <code>FE = n·F·(c_WE·V_W + c_CE·V_C)/Q · 100</code> (c in μM, V in mL, Q in C).</p>
             <p>R = 8.314462618 J mol⁻¹ K⁻¹, F = 96485.33212 C mol⁻¹ (CODATA exact). Assumes outlet flow ≈ inlet CO₂ flow (no correction for CO₂ consumption/crossover).</p>
           </details>
         </article>

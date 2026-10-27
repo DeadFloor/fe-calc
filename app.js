@@ -1108,6 +1108,8 @@
       });
       var cc = $("gc-c-" + k);
       if (cc) cc.innerHTML = S.imode === "j" ? "I <b>" + sig(r.I_mA, 4) + "</b> mA" : "j <b>" + sig(r.j, 4) + "</b> mA cm⁻²";
+      var co = $("gc-cur-out-" + k);
+      if (co) co.innerHTML = S.imode === "j" ? "I <b>" + sig(r.I_mA, 4) + "</b> mA" : "j <b>" + sig(r.j, 4) + "</b> mA cm⁻²";
       var t = $("gc-it-" + k);
       if (t) { t.textContent = r.total == null ? "—" : "Σ " + sig(r.total, 3) + "%"; t.classList.toggle("warn", r.total > 100); }
       var b = $("gc-b-" + k); if (b) b.innerHTML = barSVG(r, 8);
@@ -1253,12 +1255,158 @@
     document.querySelectorAll(".gc-tp").forEach(function (e) { e.hidden = S.ref === "std"; });
   }
   function syncSched() { ["t1", "ana", "post", "count"].forEach(function (f) { $("gc-s-" + f).value = S.sched[f]; }); }
-  function full() { migrate(); syncSched(); syncControls(); renderProducts(); renderInj(); update(); }
+  /* —— Guided / Expert UI —— */
+  var UI_KEY = "gcfe.uiMode";
+  var WIZ_HINTS = {
+    1: "Set electrode area and CO₂ flow. These convert ppm into moles and FE.",
+    2: "Enter GC timing so injection times fill automatically.",
+    3: "Read |j| or |I| from the chrono plot at each injection time.",
+    4: "Confirm products, then enter GC ppm (and liquid μM / Q if needed).",
+    5: "Review FE, partial current densities, chart, and export."
+  };
+  function getUiMode() {
+    try { return localStorage.getItem(UI_KEY) || "guided"; } catch (e) { return "guided"; }
+  }
+  function setUiMode(m) {
+    try { localStorage.setItem(UI_KEY, m); } catch (e) {}
+    var sec = $("section-gc"); if (!sec) return;
+    sec.setAttribute("data-ui-mode", m);
+    document.querySelectorAll("#gc-ui-mode .seg__btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.v === m); });
+    var hint = $("gc-mode-hint");
+    if (hint) hint.textContent = m === "guided" ? "Step-by-step for first-time eCO₂R users. Switch to Expert anytime." : "All panels visible. Switch to Guided for a step-by-step tour.";
+    if (m === "guided") setWizStep(parseInt(sec.getAttribute("data-wiz-step"), 10) || 1);
+  }
+  function setWizStep(n) {
+    n = Math.max(1, Math.min(5, n | 0));
+    var sec = $("section-gc"); if (!sec) return;
+    sec.setAttribute("data-wiz-step", String(n));
+    document.querySelectorAll("#gc-wiz-progress li").forEach(function (li) {
+      var s = parseInt(li.dataset.s, 10);
+      li.classList.toggle("is-active", s === n);
+      li.classList.toggle("is-done", s < n);
+    });
+    var h = $("gc-wiz-step-hint"); if (h) h.textContent = WIZ_HINTS[n] || "";
+    var back = $("gc-wiz-back"), next = $("gc-wiz-next");
+    if (back) back.disabled = n <= 1;
+    if (next) next.textContent = n >= 5 ? "Open Expert view" : "Next";
+    renderSchedPreview();
+    renderCurrentStep();
+    var w = $("gc-wiz-warn"); if (w && n !== 5) { w.hidden = true; w.textContent = ""; }
+    if (n === 5) validateWizStep(5, true);
+    try { sec.querySelector(".gc-wizard").scrollIntoView({ block: "nearest" }); } catch (e) {}
+  }
+  function renderSchedPreview() {
+    var el = $("gc-sched-preview"); if (!el) return;
+    applySched();
+    var times = S.inj.map(function (r, i) { return "#" + (i + 1) + " → " + (r.t || "?") + " min"; });
+    el.textContent = times.length ? ("Auto times: " + times.join(" · ")) : "Enter schedule values to preview times.";
+  }
+  function renderCurrentStep() {
+    var box = $("gc-current-step"); if (!box) return;
+    applySched();
+    var useJ = S.imode === "j";
+    box.innerHTML = S.inj.map(function (inj, k) {
+      return '<div class="gc-cur-row" data-k="' + k + '"><span class="gc-cur-row__t">t=' + esc(inj.t || "?") + "</span>" +
+        (useJ
+          ? '<label class="field" style="margin:0"><span class="field__label">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="j" value="' + esc(inj.j == null ? "" : inj.j) + '" placeholder="' + esc(S.j) + '"></label>'
+          : '<label class="field" style="margin:0"><span class="field__label">|I| (mA)</span><input class="input" inputmode="decimal" data-ik="' + k + '" data-f="I" value="' + esc(inj.I == null ? "" : inj.I) + '" placeholder="' + esc(S.Itot) + '"></label>') +
+        '<span class="gc-cell__out" id="gc-cur-out-' + k + '">—</span></div>';
+    }).join("") + '<p class="gc-hint">Blank cells use the step‑1 default (' + (useJ ? ("|j|=" + esc(S.j) + " mA cm⁻²") : ("|I|=" + esc(S.Itot) + " mA")) + ").</p>";
+  }
+  function validateWizStep(n, soft) {
+    var warn = $("gc-wiz-warn"), msg = "";
+    if (n === 1) {
+      if (!(pnum(S.area) > 0)) msg = "Enter a geometric area greater than 0 cm².";
+      else if (!(pnum(S.flow) > 0)) msg = "Enter a CO₂ flow greater than 0 sccm.";
+      else if (S.ref === "custom" && (!(pnum(S.T) > 0) || !(pnum(S.P) > 0))) msg = "Custom reference needs T > 0 K and P > 0 Pa.";
+    } else if (n === 2) {
+      if (!isFinite(pnum(S.sched.t1))) msg = "Enter the time of the first injection (min).";
+      else if (!isFinite(pnum(S.sched.ana)) || pnum(S.sched.ana) < 0) msg = "Enter GC analysis time (min).";
+      else if (!isFinite(pnum(S.sched.post)) || pnum(S.sched.post) < 0) msg = "Enter post-run time (min).";
+      else if (!(parseInt(S.sched.count, 10) >= 1)) msg = "Choose 1–6 injections.";
+    } else if (n === 3) {
+      var c = cond(), ok = S.inj.some(function (inj) { return rowCur(inj, c).ok; });
+      if (!ok) msg = "Enter |j| or |I| for at least one injection (or set a default in step 1).";
+    } else if (n === 4) {
+      var anyPpm = S.inj.some(function (inj) {
+        return S.products.some(function (p) { return isGas(p) && isFinite(pnum(inj.ppm[p.id])); });
+      });
+      var anyLiq = Object.keys(computeLiquid(cond())).length > 0;
+      if (!anyPpm && !anyLiq) msg = "Enter at least one GC ppm (or liquid concentration) to calculate FE.";
+    } else if (n === 5) {
+      var L = GC._last;
+      if (L && L.results) {
+        var last = null;
+        L.order.forEach(function (o) { if (L.results[o.i].any) last = L.results[o.i]; });
+        if (last && isFinite(last.total)) {
+          if (last.total > 110) msg = "Σ FE is " + sig(last.total, 3) + "% (>110%). Check flow, current, or GC calibration.";
+          else if (last.total < 80) msg = "Σ FE is " + sig(last.total, 3) + "% (<80%). Liquid products or losses may be missing — that can be normal.";
+          else if (Math.abs(last.total - 100) > 15) msg = "Σ FE is " + sig(last.total, 3) + "% (away from 100%). Worth a quick check of inputs.";
+        }
+      }
+    }
+    if (warn) {
+      if (msg) { warn.hidden = false; warn.textContent = msg; }
+      else { warn.hidden = true; warn.textContent = ""; }
+    }
+    return soft ? true : !msg;
+  }
+  function bindInfoTips() {
+    var pop = document.getElementById("gc-info-pop");
+    if (!pop) {
+      pop = document.createElement("div");
+      pop.id = "gc-info-pop"; pop.className = "info-pop"; pop.hidden = true; pop.setAttribute("role", "tooltip");
+      document.body.appendChild(pop);
+    }
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest(".info-i");
+      if (!btn) { pop.hidden = true; return; }
+      e.preventDefault(); e.stopPropagation();
+      pop.textContent = btn.getAttribute("data-info") || "";
+      pop.hidden = false;
+      var r = btn.getBoundingClientRect();
+      var x = Math.min(window.innerWidth - 16, Math.max(8, r.left));
+      var y = Math.max(8, r.top - 8);
+      pop.style.left = x + "px";
+      pop.style.top = "0px";
+      requestAnimationFrame(function () {
+        var h = pop.offsetHeight;
+        pop.style.top = Math.max(8, r.top - h - 10) + "px";
+        pop.style.setProperty("--arrow-x", Math.min(pop.offsetWidth - 16, Math.max(12, r.left - parseFloat(pop.style.left) + 4)) + "px");
+      });
+    });
+  }
+
+  function full() { migrate(); syncSched(); syncControls(); renderProducts(); renderInj(); renderCurrentStep(); renderSchedPreview(); update(); }
+
 
   function init() {
     if (!$("section-gc")) return;
-    ["j", "area", "Itot", "flow", "T", "P"].forEach(function (k) { $("gc-" + k).addEventListener("input", function (e) { S[k] = e.target.value; if (k === "j" || k === "Itot") document.querySelectorAll('[data-f="' + (k === "j" ? "j" : "I") + '"]').forEach(function (i) { i.placeholder = S[k]; }); update(); }); });
-    $("gc-imode").addEventListener("click", function (e) { var b = e.target.closest(".seg__btn"); if (b) { S.imode = b.dataset.v; syncControls(); renderInj(); update(); } });
+    bindInfoTips();
+    setUiMode(getUiMode());
+    var uiMode = $("gc-ui-mode");
+    if (uiMode) uiMode.addEventListener("click", function (e) {
+      var b = e.target.closest(".seg__btn"); if (!b) return;
+      setUiMode(b.dataset.v);
+    });
+    var wizBack = $("gc-wiz-back"), wizNext = $("gc-wiz-next");
+    if (wizBack) wizBack.addEventListener("click", function () {
+      var n = parseInt($("section-gc").getAttribute("data-wiz-step"), 10) || 1;
+      setWizStep(n - 1);
+    });
+    if (wizNext) wizNext.addEventListener("click", function () {
+      var n = parseInt($("section-gc").getAttribute("data-wiz-step"), 10) || 1;
+      if (n >= 5) { setUiMode("expert"); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+      if (!validateWizStep(n, false)) return;
+      setWizStep(n + 1);
+    });
+    var curBox = $("gc-current-step");
+    if (curBox) curBox.addEventListener("input", function (e) {
+      var k = e.target.dataset.ik; if (k == null) return;
+      var f = e.target.dataset.f; if (f === "j" || f === "I") { S.inj[k][f] = e.target.value; renderInj(); update(); }
+    });
+    ["j", "area", "Itot", "flow", "T", "P"].forEach(function (k) { $("gc-" + k).addEventListener("input", function (e) { S[k] = e.target.value; if (k === "j" || k === "Itot") document.querySelectorAll('[data-f="' + (k === "j" ? "j" : "I") + '"]').forEach(function (i) { i.placeholder = S[k]; }); renderCurrentStep(); update(); }); });
+    $("gc-imode").addEventListener("click", function (e) { var b = e.target.closest(".seg__btn"); if (b) { S.imode = b.dataset.v; syncControls(); renderInj(); renderCurrentStep(); update(); } });
     $("gc-ref").addEventListener("click", function (e) { var b = e.target.closest(".seg__btn"); if (b) { S.ref = b.dataset.v; syncControls(); update(); } });
     function addProduct(p) {
       if (p === "custom") {
@@ -1311,7 +1459,7 @@
       if (m != null) { S.inj[m].manual = !S.inj[m].manual; applySched(); renderInj(); update(); }
     });
     ["t1", "ana", "post", "count"].forEach(function (f) {
-      $("gc-s-" + f).addEventListener("input", function (e) { S.sched[f] = e.target.value; if (f === "count") { var n = parseInt(e.target.value, 10); if (!(n >= 1 && n <= 6)) return; } applySched(); renderInj(); update(); });
+      $("gc-s-" + f).addEventListener("input", function (e) { S.sched[f] = e.target.value; if (f === "count") { var n = parseInt(e.target.value, 10); if (!(n >= 1 && n <= 6)) return; } applySched(); renderInj(); renderCurrentStep(); renderSchedPreview(); update(); });
     });
     $("gc-add-inj").addEventListener("click", function () {
       if (S.inj.length >= 6) return;
@@ -1330,6 +1478,7 @@
     if (location.hash.indexOf("chartonly") > -1) document.body.classList.add("chart-only");
     $("gc-reset").addEventListener("click", function () { if (confirm("Clear all GC inputs?")) { S = defaults(); full(); } });
     full();
+    if (getUiMode() === "guided") setWizStep(1);
   }
   GC.load = function (state) { S = state; full(); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();

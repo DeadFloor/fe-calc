@@ -759,3 +759,44 @@ body.chart-only #gc-chart-card { margin: 0; }
 .gc-fold--inj { margin-top: 4px; }
 .gc-legend { font-size: 12px; gap: 4px 10px; max-height: 120px; overflow-y: auto; }
 .gc-leg .gc-line { margin-left: 2px; }
+
+/* —— Guided wizard —— */
+.gc-modebar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: var(--space-3) var(--space-5); }
+.gc-modebar__hint { margin: 0; font-size: var(--text-xs); color: var(--color-ink-muted); flex: 1 1 180px; }
+.gc-wizard { position: sticky; top: 0; z-index: 20; background: #fff; border-bottom: 2px solid var(--color-navy); padding: 10px var(--space-4) 12px; box-shadow: var(--shadow-sm); }
+.gc-wiz-progress { display: flex; gap: 4px; list-style: none; margin: 0; padding: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.gc-wiz-progress li { flex: 1 0 auto; min-width: 64px; text-align: center; font-size: 11px; font-weight: 600; color: var(--color-ink-muted); padding: 4px 2px; }
+.gc-wiz-progress li span { display: block; width: 28px; height: 28px; line-height: 28px; margin: 0 auto 4px; border-radius: 50%; background: var(--color-bg-muted); color: var(--color-navy); border: 2px solid var(--color-border-strong); }
+.gc-wiz-progress li.is-done span { background: var(--color-navy); color: #fff; border-color: var(--color-navy); }
+.gc-wiz-progress li.is-active span { background: var(--color-cta); color: var(--color-navy); border-color: var(--color-cta); box-shadow: 0 0 0 3px rgba(242,140,40,.25); }
+.gc-wiz-progress li.is-active { color: var(--color-navy); }
+.gc-wiz-hint { margin: 8px 0 0; font-size: var(--text-sm); color: var(--color-ink-secondary); }
+.gc-wiz-warn { margin: 6px 0 0; padding: 8px 10px; border-radius: var(--radius-md); background: var(--color-warning-bg); color: var(--color-warning-ink); font-size: var(--text-sm); }
+.gc-wiz-nav { display: flex; gap: 10px; margin-top: 10px; }
+.gc-wiz-nav .btn { flex: 1; min-height: 48px; }
+.field__help { display: block; margin-top: 4px; font-size: var(--text-xs); color: var(--color-ink-muted); line-height: 1.35; }
+.info-i { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 4px; border-radius: 50%; border: 1px solid var(--color-navy-2); background: var(--color-highlight-bg); color: var(--color-navy); font: 700 11px/1 var(--font-sans); cursor: pointer; vertical-align: middle; padding: 0; }
+.info-i:focus-visible { outline: 2px solid var(--color-cta); outline-offset: 2px; }
+.info-pop { position: fixed; z-index: 80; max-width: min(320px, calc(100vw - 24px)); padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-navy); color: #fff; font-size: var(--text-sm); line-height: 1.4; box-shadow: var(--shadow-md); }
+.info-pop::after { content: ""; position: absolute; left: var(--arrow-x, 16px); bottom: -6px; border: 6px solid transparent; border-top-color: var(--color-navy); border-bottom: 0; }
+.gc-sched-preview { margin: 8px var(--space-5) var(--space-4); padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-highlight-bg); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-navy); }
+.gc-current-step { padding: 0 var(--space-4) var(--space-4); display: grid; gap: 8px; }
+.gc-cur-row { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: #fff; }
+.gc-cur-row__t { font-weight: 700; color: var(--color-navy); font-family: var(--font-mono); }
+.gc-cur-row .input { min-height: 44px; }
+/* Guided: show only active step cards */
+#section-gc[data-ui-mode="guided"] [data-wiz] { display: none !important; }
+#section-gc[data-ui-mode="guided"][data-wiz-step="1"] [data-wiz~="1"],
+#section-gc[data-ui-mode="guided"][data-wiz-step="2"] [data-wiz~="2"],
+#section-gc[data-ui-mode="guided"][data-wiz-step="3"] [data-wiz~="3"],
+#section-gc[data-ui-mode="guided"][data-wiz-step="4"] [data-wiz~="4"],
+#section-gc[data-ui-mode="guided"][data-wiz-step="5"] [data-wiz~="5"] { display: block !important; }
+#section-gc[data-ui-mode="guided"][data-wiz-step="5"] .gc-summary { display: grid !important; }
+#section-gc[data-ui-mode="expert"] .gc-wizard { display: none !important; }
+#section-gc[data-ui-mode="expert"] [data-wiz] { display: block !important; }
+#section-gc[data-ui-mode="expert"] .gc-summary { display: grid !important; }
+#section-gc[data-ui-mode="expert"] #gc-step-current { display: none !important; } /* expert uses injection cards for current */
+@media (max-width: 720px) {
+  .gc-wiz-progress li { font-size: 10px; min-width: 56px; }
+  .gc-modebar { padding-left: var(--space-4); padding-right: var(--space-4); }
+}
