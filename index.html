@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <title>eCO₂RR Faradaic Efficiency Calculator Suite — Steve Pan</title>
+  <meta name="theme-color" content="#14213D" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="FE Calc" />
+  <link rel="stylesheet" href="./design-tokens.css" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <p class="app-header__eyebrow">Electrochemical CO₂ reduction</p>
+        <h1 class="app-header__title">Faradaic Efficiency Calculator Suite</h1>
+        <p class="app-header__subtitle">
+          Offline tools for Faradaic efficiency, partial current density,
+          production rate, and charge–time–current conversion. Values stay
+          on this device; no network required.
+        </p>
+      </div>
+    </header>
+
+    <main class="app-main" id="app-main">
+      <nav class="tab-nav" aria-label="Calculator sections">
+        <ul class="tab-list" role="tablist" id="tab-list">
+          <li role="presentation">
+            <button type="button" class="tab" role="tab" id="tab-gc" data-tab="gc"
+              aria-controls="section-gc" aria-selected="true">GC online FE</button>
+          </li>
+          <li role="presentation">
+            <button type="button" class="tab" role="tab" id="tab-fe" data-tab="fe"
+              aria-controls="section-fe" aria-selected="false" tabindex="-1">Faradaic efficiency</button>
+          </li>
+          <li role="presentation">
+            <button type="button" class="tab" role="tab" id="tab-pcd" data-tab="pcd"
+              aria-controls="section-pcd" aria-selected="false" tabindex="-1">Partial current density</button>
+          </li>
+          <li role="presentation">
+            <button type="button" class="tab" role="tab" id="tab-rate" data-tab="rate"
+              aria-controls="section-rate" aria-selected="false" tabindex="-1">Production rate</button>
+          </li>
+          <li role="presentation">
+            <button type="button" class="tab" role="tab" id="tab-converter" data-tab="converter"
+              aria-controls="section-converter" aria-selected="false" tabindex="-1">Charge–time–current</button>
+          </li>
+        </ul>
+        <div class="tab-select-wrap">
+          <label class="sr-only" for="tab-select">Calculator section</label>
+          <select class="tab-select" id="tab-select" data-tab-select>
+            <option value="gc" selected>GC online FE</option>
+            <option value="fe">Faradaic efficiency</option>
+            <option value="pcd">Partial current density</option>
+            <option value="rate">Production rate</option>
+            <option value="converter">Charge–time–current</option>
+          </select>
+        </div>
+      </nav>
+
+      <!-- 0. GC ONLINE FE (ppm-based) -->
+      <section class="calc-section is-active" id="section-gc" role="tabpanel" aria-labelledby="tab-gc" data-section="gc">
+        <div class="gc-summary" id="gc-summary" aria-live="polite">
+          <div class="gc-summary__main">
+            <span class="gc-summary__label">Total FE · <span id="gc-sum-label">latest injection</span></span>
+            <span class="gc-summary__value" id="gc-total">—</span>
+          </div>
+          <div class="gc-summary__side">
+            <span>Unaccounted <b id="gc-unacc">—</b></span>
+            <span>I <b id="gc-I">—</b></span>
+            <span>ṅ<sub>gas</sub> <b id="gc-ndot">—</b></span>
+          </div>
+          <svg class="gc-bar" id="gc-sum-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="gc-chips" id="gc-sum-chips"></div>
+          <p class="gc-flag" id="gc-flag" hidden></p>
+        </div>
+
+        <article class="calc-card">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">Cell &amp; gas conditions</h2>
+            <p class="calc-card__desc">Online GC: FE from product ppm in the CO₂ outlet stream. Results update as you type.</p>
+          </header>
+          <div class="gc-grid">
+            <div class="field gc-wide">
+              <span class="field__label">Current input</span>
+              <div class="seg" role="radiogroup" id="gc-imode">
+                <button type="button" class="seg__btn is-active" data-v="j">j × area</button>
+                <button type="button" class="seg__btn" data-v="I">Total I</button>
+              </div>
+            </div>
+            <label class="field gc-j"><span class="field__label">|j| (mA cm⁻²)</span><input class="input" inputmode="decimal" id="gc-j" value="100"></label>
+            <label class="field gc-j"><span class="field__label">Geometric area (cm²)</span><input class="input" inputmode="decimal" id="gc-area" value="1"></label>
+            <label class="field gc-i" hidden><span class="field__label">|I| (mA)</span><input class="input" inputmode="decimal" id="gc-Itot" value="100"></label>
+            <label class="field"><span class="field__label">CO₂ flow (sccm = mL min⁻¹)</span><input class="input" inputmode="decimal" id="gc-flow" value="20"></label>
+            <div class="field gc-wide">
+              <span class="field__label">Flow reference</span>
+              <div class="seg" role="radiogroup" id="gc-ref">
+                <button type="button" class="seg__btn is-active" data-v="std">Standard (273.15 K, 1 atm)</button>
+                <button type="button" class="seg__btn" data-v="custom">Custom T, P</button>
+              </div>
+            </div>
+            <label class="field gc-tp"><span class="field__label">Gas T (K)</span><input class="input" inputmode="decimal" id="gc-T" value="298.15"></label>
+            <label class="field gc-tp"><span class="field__label">Gas P (Pa)</span><input class="input" inputmode="decimal" id="gc-P" value="101325"></label>
+          </div>
+        </article>
+
+        <article class="calc-card">
+          <header class="calc-card__header gc-head">
+            <h2 class="calc-card__title">Injections</h2>
+            <div class="gc-actions">
+              <button type="button" class="btn btn--cta" id="gc-add-inj">+ Injection</button>
+            </div>
+          </header>
+          <div class="gc-grid gc-sched">
+            <label class="field"><span class="field__label">Time of 1st injection (min)</span><input class="input" inputmode="decimal" id="gc-s-t1"></label>
+            <label class="field"><span class="field__label">GC analysis time (min)</span><input class="input" inputmode="decimal" id="gc-s-ana"></label>
+            <label class="field"><span class="field__label">Post-run time (min)</span><input class="input" inputmode="decimal" id="gc-s-post"></label>
+            <label class="field"><span class="field__label">Number of injections (1–6)</span><input class="input" type="number" min="1" max="6" step="1" inputmode="numeric" id="gc-s-count"></label>
+            <p class="gc-wide gc-hint">t<sub>k</sub> = t<sub>1</sub> + (k − 1)·(t<sub>analysis</sub> + t<sub>post-run</sub>). Times are auto-filled; tap “edit” on a row to override. Enter each row’s |j| from the chronoamperogram/chronopotentiogram (blank = global value).</p>
+          </div>
+          <div class="gc-prodbar">
+            <span class="field__label">Products</span>
+            <div class="gc-presets" id="gc-presets">
+              <button type="button" class="chip-btn" data-p="H2">+ H₂</button>
+              <button type="button" class="chip-btn" data-p="CO">+ CO</button>
+              <button type="button" class="chip-btn" data-p="CH4">+ CH₄</button>
+              <button type="button" class="chip-btn" data-p="C2H4">+ C₂H₄</button>
+              <button type="button" class="chip-btn" data-p="custom">+ Custom</button>
+            </div>
+            <div id="gc-products" class="gc-products"></div>
+          </div>
+          <div id="gc-injections" class="gc-injections"></div>
+        </article>
+
+        <article class="calc-card" id="gc-chart-card">
+          <header class="calc-card__header gc-head">
+            <h2 class="calc-card__title">Product distribution</h2>
+            <div class="gc-toggles"><div class="seg gc-chart-mode" id="gc-chart-view" role="radiogroup" aria-label="Chart view">
+              <button type="button" class="seg__btn is-active" data-v="avg">Average</button>
+              <button type="button" class="seg__btn" data-v="per">Per injection</button>
+            </div>
+            <div class="seg gc-chart-mode" id="gc-chart-mode" role="radiogroup" aria-label="Chart quantity">
+              <button type="button" class="seg__btn is-active" data-v="fe">FE (%)</button>
+              <button type="button" class="seg__btn" data-v="j">j<sub>i</sub> (mA cm⁻²)</button>
+            </div></div>
+          </header>
+          <div class="gc-chart-wrap"><div id="gc-chart" role="img" aria-label="Stacked bar chart of product distribution per injection"></div>
+            <div class="gc-legend" id="gc-legend"></div>
+            <p class="gc-tip" id="gc-tip">Tap a bar segment for values.</p>
+            <div class="gc-actions gc-chart-actions">
+              <button type="button" class="btn btn--secondary" id="gc-png">Export PNG</button>
+              <button type="button" class="btn btn--ghost" id="gc-svg">Export SVG</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="calc-card">
+          <header class="calc-card__header gc-head">
+            <h2 class="calc-card__title">Results table</h2>
+            <div class="gc-actions">
+              <button type="button" class="btn btn--secondary" id="gc-csv">CSV</button>
+              <button type="button" class="btn btn--secondary" id="gc-xlsx">XLSX</button>
+              <button type="button" class="btn btn--ghost" id="gc-reset">Reset</button>
+            </div>
+          </header>
+          <div class="gc-table-wrap"><table class="gc-table" id="gc-table"></table></div>
+          <details class="gc-formula">
+            <summary>Formulas &amp; constants</summary>
+            <p><code>t_k = t_1 + (k − 1)·(t_analysis + t_post)</code></p>
+            <p><code>I_k = |j_k| · A</code> per injection (or I_k entered directly; blank row = global value)</p>
+            <p><code>ṅ_gas (mol s⁻¹) = P · (Q_mL/min · 10⁻⁶ / 60) / (R · T)</code>; standard mode uses T = 273.15 K, P = 101325 Pa</p>
+            <p><code>ṅ_i = (ppm_i · 10⁻⁶) · ṅ_gas</code></p>
+            <p><code>FE_i (%) = n_i · F · ṅ_i / I · 100</code></p>
+            <p><code>j_i = FE_i/100 · |j_k|</code>; averages are arithmetic mean ± sample SD (n − 1) of the per-injection values</p>
+            <p>R = 8.314462618 J mol⁻¹ K⁻¹, F = 96485.33212 C mol⁻¹ (CODATA exact). Assumes outlet flow ≈ inlet CO₂ flow (no correction for CO₂ consumption/crossover).</p>
+          </details>
+        </article>
+      </section>
+
+      <!-- 1. FARADAIC EFFICIENCY (populated example + FE > 100% warning) -->
+      <section class="calc-section" hidden id="section-fe" role="tabpanel"
+        aria-labelledby="tab-fe" data-section="fe">
+        <article class="calc-card">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">Faradaic efficiency</h2>
+            <p class="calc-card__desc">
+              Compute FE from electron stoichiometry, quantified product amount,
+              and total charge passed. Defaults (50 µmol, n=2, Q=9.6485 C) give FE ≈ 100%.
+            </p>
+          </header>
+          <div class="calc-card__body">
+            <form class="calc-card__inputs" id="form-fe" data-calc="fe" novalidate>
+              <div class="field-group">
+                <div class="field" data-field="n-electrons">
+                  <label class="field__label" for="fe-n-electrons">
+                    Electrons transferred per product (<span class="mono">n</span>)
+                  </label>
+
+                  <div class="preset-row" id="fe-presets" role="group" aria-label="n-electron presets">
+                    <button type="button" class="preset-btn is-active" data-n="2">CO (2)</button>
+                    <button type="button" class="preset-btn" data-n="2">HCOOH (2)</button>
+                    <button type="button" class="preset-btn" data-n="8">CH₄ (8)</button>
+                    <button type="button" class="preset-btn" data-n="12">C₂H₄ (12)</button>
+                    <button type="button" class="preset-btn" data-n="12">EtOH (12)</button>
+                    <button type="button" class="preset-btn" data-n="2">H₂ (2)</button>
+                    <button type="button" class="preset-btn" data-n="custom">Custom</button>
+                  </div>
+                  <div class="field__control">
+                    <input class="input" type="number" id="fe-n-electrons" name="n_electrons"
+                      inputmode="decimal" min="1" step="1" value="2"
+                      data-input="n-electrons" readonly aria-describedby="fe-n-electrons-hint">
+                    <span class="field__unit" aria-hidden="true">e⁻</span>
+                  </div>
+                  <p class="field__hint" id="fe-n-electrons-hint">
+                    e.g. 2 for CO, 8 for CH₄, 12 for C₂H₄ (from CO₂).
+                  </p>
+                  <p class="field__error" id="fe-n-electrons-error" data-error-for="n-electrons">
+                    Enter a positive integer.
+                  </p>
+                </div>
+
+                <div class="field" data-field="product-mode">
+                  <label class="field__label" for="fe-product-mode">Product input mode</label>
+                  <div class="field__control">
+                    <select class="select" id="fe-product-mode" data-input="product-mode">
+                      <option value="moles" selected>Molar amount</option>
+                      <option value="gas">Gas volume (ideal gas)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="field-row" id="fe-moles-block">
+                  <div class="field" data-field="n-product">
+                    <label class="field__label" for="fe-n-product">
+                      Product amount (<span class="mono">n<sub>product</sub></span>)
+                    </label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="fe-n-product" name="n_product"
+                        inputmode="decimal" min="0" step="any" value="50" data-input="n-product">
+                      <select class="select unit-select" id="fe-n-product-unit" name="n_product_unit"
+                        data-unit-for="n-product" aria-label="Product amount unit">
+                        <option value="umol" selected>µmol</option>
+                        <option value="nmol">nmol</option>
+                        <option value="mmol">mmol</option>
+                        <option value="mol">mol</option>
+                      </select>
+                    </div>
+                    <p class="field__error" data-error-for="n-product">Enter a non-negative amount.</p>
+                  </div>
+                  <div class="field" data-field="charge">
+                    <label class="field__label" for="fe-charge">
+                      Total charge (<span class="mono">Q</span>)
+                    </label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="fe-charge" name="charge"
+                        inputmode="decimal" min="0" step="any" value="9.6485" data-input="charge">
+                      <select class="select unit-select" id="fe-charge-unit" name="charge_unit"
+                        data-unit-for="charge" aria-label="Charge unit">
+                        <option value="C" selected>C</option>
+                        <option value="mC">mC</option>
+                        <option value="mAh">mA·h</option>
+                        <option value="Ah">A·h</option>
+                      </select>
+                    </div>
+                    <p class="field__error" data-error-for="charge">Charge must be greater than zero.</p>
+                  </div>
+                </div>
+              </div>
+              
+                <div id="fe-gas-block" hidden>
+                  <div class="field-row">
+                    <div class="field" data-field="gas-volume">
+                      <label class="field__label" for="fe-gas-volume">Gas volume</label>
+                      <div class="field__control">
+                        <input class="input" type="number" id="fe-gas-volume" min="0" step="any" value="1.223" />
+                        <select class="select unit-select" id="fe-gas-volume-unit"><option value="mL" selected>mL</option><option value="L">L</option></select>
+                      </div>
+                    </div>
+                    <div class="field" data-field="gas-temp">
+                      <label class="field__label" for="fe-gas-temp">Temperature</label>
+                      <div class="field__control">
+                        <input class="input" type="number" id="fe-gas-temp" step="any" value="25" />
+                        <select class="select unit-select" id="fe-gas-temp-unit"><option value="C" selected>°C</option><option value="K">K</option></select>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="field" style="margin-top: var(--space-4);">
+                    <label class="field__label" for="fe-gas-pressure">Pressure</label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="fe-gas-pressure" min="0" step="any" value="1" />
+                      <select class="select unit-select" id="fe-gas-pressure-unit">
+                        <option value="atm" selected>atm</option><option value="bar">bar</option>
+                        <option value="kPa">kPa</option><option value="Pa">Pa</option>
+                      </select>
+                    </div>
+                    <p class="field__hint">Ideal gas n = PV/RT. Default ≈ 50 µmol at 25 °C, 1 atm.</p>
+                  </div>
+                </div>
+
+<div class="btn-row">
+                <button type="submit" class="btn btn--primary" data-action="calculate">Calculate FE</button>
+                <button type="reset" class="btn btn--secondary" data-action="reset">Reset</button>
+              </div>
+            </form>
+            <div class="calc-card__results" data-results="fe" aria-live="polite">
+              <h3 class="results__heading">Results</h3>
+              <div class="banner banner--ok" id="fe-ok" role="status"><div class="banner__body"><p class="banner__title" id="fe-ok-text">FE within physical range.</p></div></div>
+              <div class="banner banner--warning" id="fe-warning" role="status" data-banner="fe-over-100">
+                <svg class="banner__icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.59c.75 1.335-.213 2.986-1.742 2.986H3.48c-1.53 0-2.493-1.651-1.743-2.986L8.257 3.1zM11 14a1 1 0 10-2 0 1 1 0 002 0zm-1-2a1 1 0 01-1-1V8a1 1 0 112 0v3a1 1 0 01-1 1z" clip-rule="evenodd"/>
+                </svg>
+                <div class="banner__body">
+                  <p class="banner__title">Faradaic efficiency exceeds 100%</p>
+                  <p class="banner__text">
+                    Check product quantification, electron count <span class="mono">n</span>,
+                    and total charge. Values above 100% usually indicate a measurement
+                    or unit error.
+                  </p>
+                </div>
+              </div>
+              <ul class="results__list">
+                <li class="result-row result-row--primary" id="fe-result-row" data-result="fe">
+                  <span class="result-row__label">Faradaic efficiency</span>
+                  <span class="result-row__value">
+                    <span id="fe-result-value">—</span>
+                    <span class="result-row__unit" id="fe-result-unit">%</span>
+                  </span>
+                </li>
+
+                <li class="result-row is-empty" id="fe-moles-row">
+                  <span class="result-row__label">Moles of product</span>
+                  <span class="result-row__value"><span id="fe-moles-value">—</span><span class="result-row__unit">mol</span></span>
+                </li>
+                <li class="result-row is-empty" id="fe-qth-row">
+                  <span class="result-row__label">Theoretical charge</span>
+                  <span class="result-row__value"><span id="fe-qth-value">—</span><span class="result-row__unit">C</span></span>
+                </li>
+                <li class="result-row" data-result="fe-charge-as-mol-e">
+                  <span class="result-row__label">Electrons from charge</span>
+                  <span class="result-row__value">
+                    <span id="fe-mol-e-value">—</span>
+                    <span class="result-row__unit" id="fe-mol-e-unit">mol e⁻</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <footer class="calc-card__footer">
+            <p class="formula-footnote">
+              <span class="formula-footnote__label">Formula</span>
+              <span class="formula-footnote__eq">FE = (n · F · n<sub>product</sub>) / Q × 100%</span>
+              <span class="formula-footnote__note">F = 96485 C·mol⁻¹ (Faraday constant). n<sub>product</sub> in mol; Q in C.</span>
+            </p>
+          </footer>
+        </article>
+      </section>
+
+      <!-- 2. PARTIAL CURRENT DENSITY -->
+      <section class="calc-section" hidden id="section-pcd" role="tabpanel"
+        aria-labelledby="tab-pcd" data-section="pcd" hidden>
+        <article class="calc-card">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">Partial current density</h2>
+            <p class="calc-card__desc">
+              Convert total geometric current density and Faradaic efficiency
+              into the product-specific partial current density
+              <span class="mono">j<sub>i</sub></span>.
+            </p>
+          </header>
+          <div class="calc-card__body">
+            <form class="calc-card__inputs" id="form-pcd" data-calc="pcd" novalidate>
+              <div class="field-group">
+
+                <div class="field" data-field="pcd-mode">
+                  <label class="field__label" for="pcd-mode">Input mode</label>
+                  <div class="field__control">
+                    <select class="select" id="pcd-mode">
+                      <option value="j" selected>Current density j</option>
+                      <option value="I">Total current I + area</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field" data-field="j-total" id="pcd-j-block">
+                  <label class="field__label" for="pcd-j-total">
+                    Total current density (<span class="mono">j<sub>total</sub></span>)
+                  </label>
+                  <div class="field__control">
+                    <input class="input" type="number" id="pcd-j-total" name="j_total"
+                      inputmode="decimal" min="0" step="any" placeholder="e.g. 200" data-input="j-total" value="10">
+                    <select class="select unit-select" id="pcd-j-total-unit" name="j_total_unit"
+                      data-unit-for="j-total" aria-label="Current density unit">
+                      <option value="mA_cm2" selected>mA·cm⁻²</option>
+                      <option value="A_m2">A·m⁻²</option>
+                      <option value="A_cm2">A·cm⁻²</option>
+                    </select>
+                  </div>
+                  <p class="field__error" data-error-for="j-total">Enter a non-negative current density.</p>
+                </div>
+
+                <div class="field-row" id="pcd-I-block" hidden>
+                  <div class="field">
+                    <label class="field__label" for="pcd-I-total">Total current</label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="pcd-I-total" min="0" step="any" value="10" />
+                      <select class="select unit-select" id="pcd-I-total-unit"><option value="mA" selected>mA</option><option value="A">A</option><option value="uA">µA</option></select>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="field__label" for="pcd-area">Geometric area</label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="pcd-area" min="0" step="any" value="1" />
+                      <select class="select unit-select" id="pcd-area-unit"><option value="cm2" selected>cm²</option><option value="m2">m²</option></select>
+                    </div>
+                  </div>
+                </div>
+                <div class="field" data-field="fe">
+                  <label class="field__label" for="pcd-fe">
+                    Faradaic efficiency (<span class="mono">FE<sub>i</sub></span>)
+                  </label>
+                  <div class="field__control">
+                    <input class="input" type="number" id="pcd-fe" name="fe"
+                      inputmode="decimal" min="0" step="any" placeholder="e.g. 45" data-input="fe" value="85">
+                    <span class="field__unit">%</span>
+                  </div>
+                  <p class="field__hint">Product-specific FE. Values &gt; 100% are flagged.</p>
+                  <p class="field__error" data-error-for="fe">Enter a valid FE.</p>
+                </div>
+              </div>
+              <div class="btn-row">
+                <button type="submit" class="btn btn--primary" data-action="calculate">Calculate j<sub>i</sub></button>
+                <button type="reset" class="btn btn--secondary" data-action="reset">Reset</button>
+              </div>
+            </form>
+            <div class="calc-card__results" data-results="pcd" aria-live="polite">
+              <h3 class="results__heading">Results</h3>
+              <div class="banner banner--warning" id="pcd-warning" role="status" data-banner="pcd-fe-over-100">
+                <svg class="banner__icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.59c.75 1.335-.213 2.986-1.742 2.986H3.48c-1.53 0-2.493-1.651-1.743-2.986L8.257 3.1zM11 14a1 1 0 10-2 0 1 1 0 002 0zm-1-2a1 1 0 01-1-1V8a1 1 0 112 0v3a1 1 0 01-1 1z" clip-rule="evenodd"/>
+                </svg>
+                <div class="banner__body">
+                  <p class="banner__title">FE input exceeds 100%</p>
+                  <p class="banner__text">Partial current density will exceed total j. Verify the FE value.</p>
+                </div>
+              </div>
+              <ul class="results__list">
+                <li class="result-row result-row--primary is-empty" id="pcd-result-row" data-result="pcd">
+                  <span class="result-row__label">Partial current density</span>
+                  <span class="result-row__value">
+                    <span id="pcd-result-value">—</span>
+                    <span class="result-row__unit" id="pcd-result-unit">mA·cm⁻²</span>
+                  </span>
+                </li>
+                <li class="result-row is-empty" id="pcd-jtot-row">
+                  <span class="result-row__label">Total j used</span>
+                  <span class="result-row__value"><span id="pcd-jtot-value">—</span><span class="result-row__unit">mA·cm⁻²</span></span>
+                </li>
+                <li class="result-row is-empty" id="pcd-Ii-row" hidden>
+                  <span class="result-row__label">Partial current I<sub>i</sub></span>
+                  <span class="result-row__value"><span id="pcd-Ii-value">—</span><span class="result-row__unit">mA</span></span>
+                </li>
+
+              </ul>
+            </div>
+          </div>
+          <footer class="calc-card__footer">
+            <p class="formula-footnote">
+              <span class="formula-footnote__label">Formula</span>
+              <span class="formula-footnote__eq">j<sub>i</sub> = j<sub>total</sub> · (FE<sub>i</sub> / 100)</span>
+              <span class="formula-footnote__note">Output unit matches the selected total current-density unit.</span>
+            </p>
+          </footer>
+        </article>
+      </section>
+
+      <!-- 3. PRODUCTION RATE -->
+      <section class="calc-section" hidden id="section-rate" role="tabpanel"
+        aria-labelledby="tab-rate" data-section="rate" hidden>
+        <article class="calc-card">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">Production rate</h2>
+            <p class="calc-card__desc">
+              Estimate molar (or mass) production rate from current,
+              Faradaic efficiency, and electron stoichiometry.
+            </p>
+          </header>
+          <div class="calc-card__body">
+            <form class="calc-card__inputs" id="form-rate" data-calc="rate" novalidate>
+              <div class="field-group">
+                <div class="field-row">
+                  <div class="field" data-field="current">
+                    <label class="field__label" for="rate-current">Current (<span class="mono">I</span>)</label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="rate-current" name="current"
+                        inputmode="decimal" min="0" step="any" placeholder="e.g. 50" data-input="current" value="10">
+                      <select class="select unit-select" id="rate-current-unit" name="current_unit"
+                        data-unit-for="current" aria-label="Current unit">
+                        <option value="mA" selected>mA</option>
+                        <option value="A">A</option>
+                        <option value="uA">µA</option>
+                      </select>
+                    </div>
+                    <p class="field__error" data-error-for="current">Enter a non-negative current.</p>
+                  </div>
+                  <div class="field" data-field="fe">
+                    <label class="field__label" for="rate-fe">Faradaic efficiency (<span class="mono">FE</span>)</label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="rate-fe" name="fe"
+                        inputmode="decimal" min="0" step="any" placeholder="e.g. 60" data-input="fe" value="90">
+                      <span class="field__unit">%</span>
+                    </div>
+                    <p class="field__error" data-error-for="fe">Enter a valid FE.</p>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field" data-field="n-electrons">
+                    <label class="field__label" for="rate-n-electrons">Electrons per product (<span class="mono">n</span>)</label>
+                    
+                  <div class="preset-row" id="rate-presets" role="group" aria-label="n-electron presets">
+                    <button type="button" class="preset-btn is-active" data-n="2">CO (2)</button>
+                    <button type="button" class="preset-btn" data-n="2">HCOOH (2)</button>
+                    <button type="button" class="preset-btn" data-n="8">CH₄ (8)</button>
+                    <button type="button" class="preset-btn" data-n="12">C₂H₄ (12)</button>
+                    <button type="button" class="preset-btn" data-n="12">EtOH (12)</button>
+                    <button type="button" class="preset-btn" data-n="2">H₂ (2)</button>
+                    <button type="button" class="preset-btn" data-n="custom">Custom</button>
+                  </div>
+<div class="field__control">
+                      <input class="input" type="number" id="rate-n-electrons" name="n_electrons"
+                        inputmode="decimal" min="1" step="1" placeholder="e.g. 2" data-input="n-electrons" value="2" readonly>
+                      <span class="field__unit" aria-hidden="true">e⁻</span>
+                    </div>
+                    <p class="field__error" data-error-for="n-electrons">Enter a positive integer.</p>
+                  </div>
+                  <div class="field" data-field="area">
+                    <label class="field__label" for="rate-area">Geometric area <span class="optional">(optional)</span></label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="rate-area" min="0" step="any" value="1" />
+                      <select class="select unit-select" id="rate-area-unit"><option value="cm2" selected>cm²</option><option value="m2">m²</option></select>
+                    </div>
+                    <p class="field__hint">Leave 0/blank to skip areal rate.</p>
+                  </div>
+                  <div class="field" data-field="molar-mass">
+                    <label class="field__label" for="rate-molar-mass">
+                      Molar mass <span class="optional">(optional)</span>
+                    </label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="rate-molar-mass" name="molar_mass"
+                        inputmode="decimal" min="0" step="any" placeholder="e.g. 28.01" data-input="molar-mass" />
+                      <span class="field__unit">g·mol⁻¹</span>
+                    </div>
+                    <p class="field__hint">If set, also reports mass rate (e.g. µg·h⁻¹).</p>
+                  </div>
+                </div>
+              </div>
+              <div class="btn-row">
+                <button type="submit" class="btn btn--primary" data-action="calculate">Calculate rate</button>
+                <button type="reset" class="btn btn--secondary" data-action="reset">Reset</button>
+              </div>
+            </form>
+            <div class="calc-card__results" data-results="rate" aria-live="polite">
+              <h3 class="results__heading">Results</h3>
+              <ul class="results__list">
+                <li class="result-row result-row--primary is-empty" id="rate-result-row" data-result="rate-molar">
+                  <span class="result-row__label">Molar production rate</span>
+                  <span class="result-row__value">
+                    <span id="rate-result-value">—</span>
+                    <span class="result-row__unit" id="rate-result-unit">mol·s⁻¹</span>
+                  </span>
+                </li>
+                <li class="result-row is-empty" id="rate-umolh-row">
+                  <span class="result-row__label">Rate</span>
+                  <span class="result-row__value"><span id="rate-umolh-value">—</span><span class="result-row__unit">µmol·h⁻¹</span></span>
+                </li>
+                <li class="result-row is-empty" id="rate-areal-row" hidden>
+                  <span class="result-row__label">Areal rate</span>
+                  <span class="result-row__value"><span id="rate-areal-value">—</span><span class="result-row__unit">µmol·cm⁻²·h⁻¹</span></span>
+                </li>
+                <li class="result-row is-empty" id="rate-Ii-row">
+                  <span class="result-row__label">Partial current I<sub>i</sub></span>
+                  <span class="result-row__value"><span id="rate-Ii-value">—</span><span class="result-row__unit">mA</span></span>
+                </li>
+
+                <li class="result-row is-empty" id="rate-mass-row" data-result="rate-mass" hidden>
+                  <span class="result-row__label">Mass production rate</span>
+                  <span class="result-row__value">
+                    <span id="rate-mass-value">—</span>
+                    <span class="result-row__unit" id="rate-mass-unit">µg·h⁻¹</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <footer class="calc-card__footer">
+            <p class="formula-footnote">
+              <span class="formula-footnote__label">Formula</span>
+              <span class="formula-footnote__eq">rate = (I · FE / 100) / (n · F)</span>
+              <span class="formula-footnote__note">I in A, rate in mol·s⁻¹ (convert for display). F = 96485 C·mol⁻¹.</span>
+            </p>
+          </footer>
+        </article>
+      </section>
+
+      <!-- 4. CHARGE–TIME–CURRENT CONVERTER -->
+      <section class="calc-section" hidden id="section-converter" role="tabpanel"
+        aria-labelledby="tab-converter" data-section="converter" hidden>
+        <article class="calc-card">
+          <header class="calc-card__header">
+            <h2 class="calc-card__title">Charge–time–current converter</h2>
+            <p class="calc-card__desc">
+              Convert between charge <span class="mono">Q</span>, time
+              <span class="mono">t</span>, and current <span class="mono">I</span>
+              using <span class="mono">Q = I · t</span>. Choose which quantity to solve for.
+            </p>
+          </header>
+          <div class="calc-card__body">
+            <form class="calc-card__inputs" id="form-converter" data-calc="converter" novalidate>
+              <div class="field-group">
+                <div class="field" data-field="solve-for">
+                  <label class="field__label" for="conv-solve-for">Solve for</label>
+                  <div class="field__control">
+                    <select class="select" id="conv-solve-for" name="solve_for" data-input="solve-for" data-mode>
+                      <option value="Q" selected>Charge (Q)</option>
+                      <option value="t">Time (t)</option>
+                      <option value="I">Current (I)</option>
+                    </select>
+                  </div>
+                  <p class="field__hint">The chosen field becomes the result; the other two are inputs.</p>
+                </div>
+                <div class="field-row">
+                  <div class="field" data-field="current" id="conv-field-current">
+                    <label class="field__label" for="conv-current">Current (<span class="mono">I</span>)</label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="conv-current" name="current"
+                        inputmode="decimal" min="0" step="any" placeholder="e.g. 10" data-input="current" value="10">
+                      <select class="select unit-select" id="conv-current-unit" name="current_unit"
+                        data-unit-for="current" aria-label="Current unit">
+                        <option value="mA" selected>mA</option>
+                        <option value="A">A</option>
+                        <option value="uA">µA</option>
+                      </select>
+                    </div>
+                    <p class="field__error" data-error-for="current">Enter a valid current.</p>
+                  </div>
+                  <div class="field" data-field="time" id="conv-field-time">
+                    <label class="field__label" for="conv-time">Time (<span class="mono">t</span>)</label>
+                    <div class="field__control">
+                      <input class="input" type="number" id="conv-time" name="time"
+                        inputmode="decimal" min="0" step="any" placeholder="e.g. 3600" data-input="time" />
+                      <select class="select unit-select" id="conv-time-unit" name="time_unit"
+                        data-unit-for="time" aria-label="Time unit">
+                        <option value="s" selected>s</option>
+                        <option value="min">min</option>
+                        <option value="h">h</option>
+                      </select>
+                    </div>
+                    <p class="field__error" data-error-for="time">Enter a valid time.</p>
+                  </div>
+                </div>
+                <div class="field" data-field="charge" id="conv-field-charge">
+                  <label class="field__label" for="conv-charge">Charge (<span class="mono">Q</span>)</label>
+                  <div class="field__control">
+                    <input class="input" type="number" id="conv-charge" name="charge"
+                      inputmode="decimal" min="0" step="any" placeholder="—" data-input="charge" value="9.6485">
+                    <select class="select unit-select" id="conv-charge-unit" name="charge_unit"
+                      data-unit-for="charge" aria-label="Charge unit">
+                        <option value="C" selected>C</option>
+                        <option value="mAh">mA·h</option>
+                        <option value="Ah">A·h</option>
+                      </select>
+                  </div>
+                  <p class="field__hint">Disabled while solving for Q (result appears on the right).</p>
+                  <p class="field__error" data-error-for="charge">Enter a valid charge.</p>
+                </div>
+              </div>
+              <div class="btn-row">
+                <button type="submit" class="btn btn--primary" data-action="calculate">Convert</button>
+                <button type="reset" class="btn btn--secondary" data-action="reset">Reset</button>
+              </div>
+            </form>
+            <div class="calc-card__results" data-results="converter" aria-live="polite">
+              <h3 class="results__heading">Results</h3>
+              <ul class="results__list">
+                <li class="result-row result-row--primary is-empty" id="conv-result-row" data-result="converter">
+                  <span class="result-row__label" id="conv-result-label">Charge</span>
+                  <span class="result-row__value">
+                    <span id="conv-result-value">—</span>
+                    <span class="result-row__unit" id="conv-result-unit">C</span>
+                  </span>
+                </li>
+                <li class="result-row is-empty" id="conv-C-row">
+                  <span class="result-row__label">Q in coulombs</span>
+                  <span class="result-row__value"><span id="conv-C-value">—</span><span class="result-row__unit">C</span></span>
+                </li>
+                <li class="result-row is-empty" id="conv-mAh-row">
+                  <span class="result-row__label">Q in mA·h</span>
+                  <span class="result-row__value"><span id="conv-mAh-value">—</span><span class="result-row__unit">mA·h</span></span>
+                </li>
+                <li class="result-row is-empty" id="conv-Ah-row">
+                  <span class="result-row__label">Q in A·h</span>
+                  <span class="result-row__value"><span id="conv-Ah-value">—</span><span class="result-row__unit">A·h</span></span>
+                </li>
+
+              </ul>
+            </div>
+          </div>
+          <footer class="calc-card__footer">
+            <p class="formula-footnote">
+              <span class="formula-footnote__label">Formula</span>
+              <span class="formula-footnote__eq">Q = I · t &nbsp;·&nbsp; I = Q / t &nbsp;·&nbsp; t = Q / I</span>
+              <span class="formula-footnote__note">SI base: Q in C, I in A, t in s. Display units follow the selectors.</span>
+            </p>
+          </footer>
+        </article>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>
+        eCO₂RR calculator suite · Steve Pan · offline ·
+        Faraday constant <code>F = 96485.33212 C·mol⁻¹</code> · <span id="app-version">v</span>
+      </p>
+    </footer>
+  </div>
+
+  <script src="./version.js"></script>
+  <script src="./pwa.js" defer></script>
+  <script src="./vendor/xlsx.full.min.js" defer></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>

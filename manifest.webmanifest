@@ -1,0 +1,19 @@
+{
+  "name": "eCO2RR FE Calculator",
+  "short_name": "FE Calc",
+  "description": "Offline Faradaic efficiency calculator for electrochemical CO2 reduction (online GC, ppm-based).",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#14213D",
+  "background_color": "#F3F5F9",
+  "categories": ["education", "productivity", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
