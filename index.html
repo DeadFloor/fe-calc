@@ -68,6 +68,11 @@
 
       <!-- 0. GC ONLINE FE (ppm-based) -->
       <section class="calc-section is-active" id="section-gc" role="tabpanel" aria-labelledby="tab-gc" data-section="gc" data-ui-mode="guided" data-wiz-step="1">
+        <div class="hx-bar" role="toolbar" aria-label="Experiment history">
+          <button type="button" class="btn btn--ghost hx-bar__btn" id="hx-new">＋ New</button>
+          <button type="button" class="btn btn--secondary hx-bar__btn" id="hx-save">Save experiment<span class="hx-dot" id="hx-dirty" hidden title="Unsaved changes"></span></button>
+          <button type="button" class="btn btn--cta hx-bar__btn" id="hx-open">My experiments</button>
+        </div>
         <div class="gc-modebar">
           <div class="seg" id="gc-ui-mode" role="radiogroup" aria-label="Input mode">
             <button type="button" class="seg__btn is-active" data-v="guided">Guided</button>
@@ -880,9 +885,45 @@
     </footer>
   </div>
 
+
+  <!-- Experiment history (on-device only) -->
+  <dialog class="hx-dlg" id="hx-save-dlg" aria-labelledby="hx-save-title">
+    <form id="hx-save-form" class="hx-dlg__body" method="dialog">
+      <header class="hx-dlg__head"><h2 id="hx-save-title">Save experiment</h2><button type="button" class="gc-x" data-close="hx-save-dlg" aria-label="Close">×</button></header>
+      <label class="field"><span class="field__label">Name</span><input class="input" id="hx-s-name" autocomplete="off" placeholder="e.g. Cu GDE −1.0 V KHCO₃ run 3"></label>
+      <p class="hx-kv"><span>Date</span><b id="hx-s-date"></b></p>
+      <p class="hx-kv"><span>Condition</span><b id="hx-s-cond"></b></p>
+      <label class="field"><span class="field__label">Catalyst (optional)</span><input class="input" id="hx-s-cat" autocomplete="off" placeholder="e.g. Cu nanoparticles on GDL"></label>
+      <label class="field"><span class="field__label">Electrolyte (optional)</span><input class="input" id="hx-s-elec" autocomplete="off" placeholder="e.g. 0.1 M KHCO₃"></label>
+      <div class="hx-kv hx-kv--block"><span>Observations (included)</span><p id="hx-s-notes"></p></div>
+      <p class="hx-note">Saves all inputs and computed results. Saved only on this device. Clearing browser data deletes it; back up regularly.</p>
+      <div class="hx-dlg__actions">
+        <button type="button" class="btn btn--ghost" id="hx-s-update" hidden>Save as new</button>
+        <button type="submit" class="btn btn--cta">Save</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog class="hx-dlg hx-dlg--list" id="hx-list-dlg" aria-labelledby="hx-list-title">
+    <div class="hx-dlg__body">
+      <header class="hx-dlg__head"><h2 id="hx-list-title">My experiments</h2><button type="button" class="gc-x" data-close="hx-list-dlg" aria-label="Close">×</button></header>
+      <p class="hx-note"><b>Saved only on this device.</b> Clearing browser data deletes it; back up regularly. <span class="hx-sub">Storage: <span id="hx-backend">…</span>. <span id="hx-persist"></span></span></p>
+      <div class="hx-tools">
+        <input class="input" type="search" id="hx-q" placeholder="Search name, catalyst, notes…" aria-label="Search experiments">
+        <select class="input" id="hx-sort" aria-label="Sort"><option value="new">Newest first</option><option value="old">Oldest first</option></select>
+      </div>
+      <p class="hx-count" id="hx-count"></p>
+      <div class="hx-list" id="hx-list"></div>
+      <div class="hx-dlg__actions hx-backup">
+        <button type="button" class="btn btn--secondary" id="hx-backup">Back up all (.json)</button>
+        <label class="btn btn--ghost hx-restore">Restore from file<input type="file" id="hx-restore-file" accept="application/json,.json" hidden></label>
+      </div>
+    </div>
+  </dialog>
+  <div class="hx-toast" id="hx-toast" role="status" aria-live="polite" hidden></div>
   <script src="./version.js"></script>
   <script src="./pwa.js" defer></script>
   <script src="./vendor/xlsx.full.min.js" defer></script>
   <script src="./app.js" defer></script>
+  <script src="./history.js" defer></script>
 </body>
 </html>

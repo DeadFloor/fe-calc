@@ -877,7 +877,7 @@
     S.inj.length = n;
     S.inj.forEach(function (r, k) { if (!r.manual) { var v = schedTime(k, S.sched); r.t = isFinite(v) ? String(+v.toPrecision(6)) : ""; } });
   }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} if (GC.onChange) GC.onChange(); }
   function $(id) { return document.getElementById(id); }
 
   function cond() {
@@ -1823,6 +1823,24 @@
     var wm = typeof location !== "undefined" && location.hash.match(/(?:^#|[?&,])wiz[=:](\d+)/);
     if (wm) setWizStep(parseInt(wm[1], 10));
   }
-  GC.load = function (state) { S = state; full(); };
+  GC.load = function (state) { S = JSON.parse(JSON.stringify(state)); full(); };
+  GC.getState = function () { return JSON.parse(JSON.stringify(S)); };
+  GC.reset = function () { S = defaults(); full(); };
+  GC.csv = csv; GC.xlsx = xlsx;
+  /* Compact results snapshot for history cards */
+  GC.snapshot = function () {
+    var L = GC._last || {}, res = L.results || [], order = L.order || [];
+    var D = order.filter(function (o) { return res[o.i] && res[o.i].any; });
+    var tot = D.map(function (o) { return res[o.i].total; });
+    var per = {};
+    S.products.forEach(function (p) {
+      var a = D.map(function (o) { var x = res[o.i].per[p.id]; return x ? x.fe : null; }).filter(function (v) { return v != null; });
+      if (a.length) per[p.id] = { name: prodDisplay(p), fe: mstat(a).m };
+    });
+    var top = Object.keys(per).map(function (k) { return per[k]; }).sort(function (a, b) { return b.fe - a.fe; }).slice(0, 3);
+    var ts = mstat(tot);
+    return { n: D.length, feTotal: isFinite(ts.m) ? ts.m : null, feTotalSD: isFinite(ts.sd) ? ts.sd : null, top: top,
+      technique: S.technique, E: S.Eset, I: S.technique === "CP" ? (S.cpmode === "j" ? S.jset + " mA cm⁻²" : S.Iset + " mA") : "" };
+  };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })(typeof window !== "undefined" ? window : this);

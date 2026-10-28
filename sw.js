@@ -2,7 +2,7 @@
 importScripts("./version.js");
 var CACHE = "fecalc-" + self.APP_VERSION;
 var ASSETS = [
-  "./", "./index.html", "./styles.css", "./design-tokens.css", "./app.js", "./version.js", "./pwa.js",
+  "./", "./index.html", "./styles.css", "./design-tokens.css", "./app.js", "./history.js", "./version.js", "./pwa.js",
   "./manifest.webmanifest", "./vendor/xlsx.full.min.js",
   "./fonts/IBMPlexSans-Variable.ttf", "./fonts/IBMPlexMono-Regular.ttf", "./fonts/IBMPlexMono-Medium.ttf",
   "./fonts/IBMPlexMono-SemiBold.ttf", "./fonts/IBMPlexMono-Bold.ttf",
