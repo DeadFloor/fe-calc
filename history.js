@@ -38,7 +38,10 @@
   }
 
   /* ---------- pure core ---------- */
-  function uid() { return "exp-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8); }
+  function uid() {
+    try { var c = (typeof crypto !== "undefined" && crypto) || (root && root.crypto); if (c && c.randomUUID) return "exp-" + c.randomUUID(); } catch (e) {}
+    return "exp-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+  }
   function makeRecord(meta, state, snapshot, now) {
     now = now || new Date().toISOString();
     return { id: uid(), name: (meta.name || "").trim() || ("Experiment " + now.slice(0, 10)),
@@ -75,7 +78,27 @@
     out.sort(function (a, b) { return sort === "old" ? a.createdAt.localeCompare(b.createdAt) : b.createdAt.localeCompare(a.createdAt); });
     return out;
   }
-  var H = { memStore: memStore, lsStore: lsStore, idbStore: idbStore, openStore: openStore, makeRecord: makeRecord, duplicate: duplicate, backupJSON: backupJSON,
+  /* Save core: a plain save ALWAYS creates a new record with a fresh id.
+     Only mode === "update" with an existing openId overwrites that record. */
+  function saveRun(store, opts) {
+    var rec;
+    return store.all().then(function (all) {
+      var cur = null;
+      if (opts.mode === "update" && opts.openId) all.forEach(function (r) { if (r.id === opts.openId) cur = r; });
+      if (cur) {
+        rec = cur; if (opts.meta.name && opts.meta.name.trim()) rec.name = opts.meta.name.trim();
+        rec.catalyst = opts.meta.catalyst || ""; rec.electrolyte = opts.meta.electrolyte || "";
+        rec.state = JSON.parse(JSON.stringify(opts.state)); rec.snapshot = opts.snapshot || null;
+        rec.updatedAt = new Date().toISOString(); rec.appVersion = root.APP_VERSION || "";
+      } else {
+        var ids = {}; all.forEach(function (r) { ids[r.id] = 1; });
+        rec = makeRecord(opts.meta, opts.state, opts.snapshot);
+        while (ids[rec.id]) rec.id = uid();
+      }
+      return store.put(rec);
+    }).then(function () { return rec; });
+  }
+  var H = { saveRun: saveRun, uid: uid, memStore: memStore, lsStore: lsStore, idbStore: idbStore, openStore: openStore, makeRecord: makeRecord, duplicate: duplicate, backupJSON: backupJSON,
     parseBackup: parseBackup, mergeInto: mergeInto, filterSort: filterSort };
   if (typeof module !== "undefined" && module.exports) { module.exports = H; return; }
   root.FEHistory = H;
@@ -114,43 +137,47 @@
     }).join("");
   }
   function find(id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]; return null; }
-  function withState(state, fn) { var cur = GC.getState(); suppress = true; GC.load(state); try { fn(); } finally { GC.load(cur); suppress = false; } }
+  function withState(rec, fn) { var cur = GC.getState(), m0 = GC.exportMeta; suppress = true; GC.load(rec.state); GC.exportMeta = { name: rec.name, catalyst: rec.catalyst, electrolyte: rec.electrolyte };
+    try { fn(); } finally { GC.load(cur); GC.exportMeta = m0; suppress = false; } }
   function openDlg(id) { var d = $(id); if (d.showModal) d.showModal(); else d.setAttribute("open", ""); }
   function closeDlg(id) { var d = $(id); if (d.close) d.close(); else d.removeAttribute("open"); }
 
   function openSave(afterSave) {
     var st = GC.getState(), cur = currentId && find(currentId);
-    $("hx-s-name").value = cur ? cur.name : "";
+    $("hx-s-name").value = "";
     $("hx-s-cat").value = cur ? cur.catalyst : "";
     $("hx-s-elec").value = cur ? cur.electrolyte : "";
     $("hx-s-date").textContent = fmtDate(new Date().toISOString());
     $("hx-s-cond").textContent = st.technique === "CP" ? ("CP · " + (st.cpmode === "j" ? st.jset + " mA cm⁻²" : st.Iset + " mA")) : ("CA · E " + (st.Eset || "—") + " V");
     $("hx-s-notes").textContent = st.notes ? st.notes : "(no observations entered)";
-    $("hx-s-update").hidden = !cur;
+    var up = $("hx-s-update");
+    up.hidden = !cur;
+    if (cur) up.textContent = "Update “" + cur.name + "”";
     $("hx-save-dlg")._after = afterSave || null;
     openDlg("hx-save-dlg");
     setTimeout(function () { $("hx-s-name").focus(); }, 50);
   }
-  function doSave(asNew) {
+  function doSave(mode) {
     var meta = { name: $("hx-s-name").value, catalyst: $("hx-s-cat").value.trim(), electrolyte: $("hx-s-elec").value.trim() };
-    var cur = !asNew && currentId && find(currentId), rec;
-    if (cur) { rec = cur; rec.name = meta.name.trim() || rec.name; rec.catalyst = meta.catalyst; rec.electrolyte = meta.electrolyte;
-      rec.state = GC.getState(); rec.snapshot = GC.snapshot(); rec.updatedAt = new Date().toISOString(); rec.appVersion = root.APP_VERSION || ""; }
-    else rec = makeRecord(meta, GC.getState(), GC.snapshot());
-    return store.put(rec).then(function () { currentId = rec.id; setDirty(false); closeDlg("hx-save-dlg"); toast("Saved “" + rec.name + "” on this device"); var a = $("hx-save-dlg")._after; if (a) a(); return refresh(); });
+    if (mode === "update" && !confirm("Overwrite the saved run “" + (find(currentId) || {}).name + "” with the current inputs?")) return Promise.resolve();
+    return saveRun(store, { mode: mode, openId: currentId, meta: meta, state: GC.getState(), snapshot: GC.snapshot() }).then(function (rec) {
+      currentId = rec.id; GC.exportMeta = { name: rec.name, catalyst: rec.catalyst, electrolyte: rec.electrolyte }; setDirty(false); closeDlg("hx-save-dlg");
+      toast((mode === "update" ? "Updated “" : "Saved new “") + rec.name + "” on this device");
+      var a = $("hx-save-dlg")._after; if (a) a(); return refresh();
+    });
   }
   function newExperiment() {
-    function go() { suppress = true; GC.reset(); suppress = false; currentId = null; setDirty(false); toast("New experiment — inputs cleared"); }
+    function go() { suppress = true; GC.reset(); suppress = false; currentId = null; GC.exportMeta = null; setDirty(false); toast("New experiment — inputs cleared"); }
     if (dirty && confirm("Save the current experiment before clearing?\nOK = save first · Cancel = continue")) { openSave(go); return; }
     if (!dirty || confirm("Clear all inputs and start a new experiment?")) go();
   }
   function act(id, a) {
     var r = find(id); if (!r) return;
     if (a === "open") { if (dirty && !confirm("Unsaved changes in the calculator will be replaced. Continue?")) return;
-      suppress = true; GC.load(r.state); suppress = false; currentId = r.id; setDirty(false); closeDlg("hx-list-dlg"); toast("Opened “" + r.name + "”"); render(); }
+      suppress = true; GC.load(r.state); suppress = false; currentId = r.id; GC.exportMeta = { name: r.name, catalyst: r.catalyst, electrolyte: r.electrolyte }; setDirty(false); closeDlg("hx-list-dlg"); toast("Opened “" + r.name + "”"); render(); }
     else if (a === "dup") { var d = duplicate(r); store.put(d).then(refresh).then(function () { toast("Duplicated as “" + d.name + "”"); }); }
-    else if (a === "csv") withState(r.state, GC.csv);
-    else if (a === "xlsx") withState(r.state, GC.xlsx);
+    else if (a === "csv") withState(r, GC.csv);
+    else if (a === "xlsx") withState(r, GC.xlsx);
     else if (a === "rename") { var n = prompt("Rename experiment", r.name); if (n && n.trim()) { r.name = n.trim(); r.updatedAt = new Date().toISOString(); store.put(r).then(refresh); } }
     else if (a === "del") { if (confirm("Delete “" + r.name + "” from this device? This cannot be undone.")) store.del(r.id).then(function () { if (currentId === r.id) currentId = null; return refresh(); }).then(function () { toast("Deleted"); }); }
   }
@@ -193,8 +220,8 @@
     $("hx-open").addEventListener("click", function () { refresh(); openDlg("hx-list-dlg"); });
     $("hx-save").addEventListener("click", function () { openSave(); });
     $("hx-new").addEventListener("click", newExperiment);
-    $("hx-save-form").addEventListener("submit", function (e) { e.preventDefault(); doSave(false); });
-    $("hx-s-update").addEventListener("click", function () { doSave(true); });
+    $("hx-save-form").addEventListener("submit", function (e) { e.preventDefault(); doSave("new"); });
+    $("hx-s-update").addEventListener("click", function () { doSave("update"); });
     document.querySelectorAll("[data-close]").forEach(function (b) { b.addEventListener("click", function () { closeDlg(b.getAttribute("data-close")); }); });
     $("hx-q").addEventListener("input", render); $("hx-sort").addEventListener("change", render);
     $("hx-list").addEventListener("click", function (e) { var b = e.target.closest("[data-act]"); if (!b) return; act(b.closest(".hx-card").getAttribute("data-id"), b.getAttribute("data-act")); });
@@ -203,6 +230,6 @@
     if (/[#&]hx=list/.test(location.hash)) setTimeout(function () { openDlg("hx-list-dlg"); }, 300);
     if (/[#&]hx=save/.test(location.hash)) setTimeout(function () { openSave(); }, 300);
   }
-  root.FEHistoryUI = { _act: act, _refresh: function () { return refresh(); }, _store: function () { return store; } };
+  root.FEHistoryUI = { _save: function (name, mode) { $("hx-s-name").value = name; return doSave(mode || "new"); }, _new: function () { suppress = true; GC.reset(); suppress = false; currentId = null; setDirty(false); }, _openSave: openSave, _list: function () { return list; }, _act: act, _refresh: function () { return refresh(); }, _store: function () { return store; } };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); }); else setTimeout(init, 0);
 })(typeof window !== "undefined" ? window : this);

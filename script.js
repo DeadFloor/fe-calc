@@ -1479,12 +1479,222 @@
     if (GC._nodl) return;
     dl(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }), EXPORT_TEMPLATE.fileStem + "_" + stamp() + ".csv");
   }
+  /* ===== Reference-layout sheet (mirrors Steve's analysis workbook, sheet "22 N2 FNi BARE CP-10mA") =====
+     Same cell positions/labels/sections/product order; live Excel formulas where the reference uses formulas.
+     Rows shift down by (N−4) when there are more than 4 injections. Custom products → flat sheet only. */
+  var REF_GAS = ["CH4","C2H6","C2H4","C3H8","C3H6","iC4H10","nC4H10","t2C4H8","1C4H8","iC4H8","c2C4H8","iC5H12","nC5H12","C4H6","t2C5H10","2Me2C4","1C5H10","c2C5H10","C6H14","1C6H12","c2C6H12","t2C6H12","CO","H2"];
+  var REF_GAS_LBL = ["CH4","C2H6","C2H4","C3H8","C3H6","Isobutane","n-Butane","trans-2-Butene","1-Butene","Isobutene","cis-2-Butene","Isopentane","n-Pentane","1,3-Butadiene","trans-2-Pentene","2-Methyl-2-butene","1-Pentene","cis-2-Pentene","Hexane","1-Hexene","c-2-Hexene","t-2-Hexene","CO","H2"];
+  /* Liquids table (row 25) order and the Overall-Data column holding each liquid's Ne */
+  var REF_LIQ = ["HCOO","AcO","MeCHO","EtCHO","Me2CO","BuCHO","MeOH","iPrOH","EtOH","PeCHO","nPrOH","AllylOH","1BuOH","2Me1BuOH","PeOH","1HexOH"];
+  var REF_LIQ_LBL = ["Formate","Acetate","Acetaldehyde","Propionaldehyde","Acetone","Butanal","Methanol","Isopropanol","Ethanol","Pentanal","n-Propanol","Allyl Alcohol","1-Butanol","2-Methyl-1-Butanol","Pentanol","1-Hexanol"];
+  var REF_OV_LIQ = ["HCOO","AcO","MeCHO","EtCHO","Me2CO","MeOH","EtOH","nPrOH","AllylOH","1BuOH"]; /* Z..AI, rows 34-41 */
+  var REF_OV_LIQ_LBL = ["Formate","Acetate","Acetaldehyde","Propionaldehyde","Acetone","Methanol","Ethanol","1-Propanol","Allyl Alcohol","1-Butanol"];
+  var REF_EXTRA = ["BuCHO","iPrOH","PeCHO","2Me1BuOH","PeOH","1HexOH"]; /* B..G, rows 42-48 */
+  var REF_EXTRA_LBL = ["Butanal","Isopropanol","Pentanal","2-Methyl-1-Butanol","Pentanol","1-Hexanol"];
+  function colL(i) { var s = ""; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+  function colI(L) { var n = 0; for (var k = 0; k < L.length; k++) n = n * 26 + (L.charCodeAt(k) - 64); return n - 1; }
+  function cho(formula) {
+    var o = { C: 0, H: 0, O: 0 }, re = /([A-Z][a-z]?)(\d*)/g, m;
+    while ((m = re.exec(formula || ""))) { if (!m[1]) break; if (o.hasOwnProperty(m[1])) o[m[1]] += m[2] ? +m[2] : 1; }
+    return o;
+  }
+  function buildRefSheet(meta) {
+    var X = root.XLSX, ws = {}, merges = [], maxR = 0, maxC = 0;
+    var L = GC._last, D = L.order.filter(function (o) { return L.results[o.i].any; });
+    var N = Math.max(D.length, 1), off = Math.max(0, N - 4);
+    var byId = {}; S.products.forEach(function (p) { byId[p.id] = p; });
+    var T = S.ref === "std" ? 273.15 : pnum(S.T), P = S.ref === "std" ? 101325 : pnum(S.P);
+    function put(a1, v) {
+      var m = /^([A-Z]+)(\d+)$/.exec(a1), c = colI(m[1]), r = +m[2] - 1; maxR = Math.max(maxR, r); maxC = Math.max(maxC, c);
+      var cell;
+      if (v && typeof v === "object") { cell = { t: "n", f: v.f }; if (isFinite(v.v)) cell.v = v.v; }
+      else if (typeof v === "number") { if (!isFinite(v)) return; cell = { t: "n", v: v }; }
+      else if (v == null || v === "") return;
+      else cell = { t: "s", v: String(v) };
+      ws[a1] = cell;
+    }
+    function F(f, v) { return { f: f, v: v }; }
+    function mg(a, b) { merges.push(X.utils.decode_range(a + ":" + b)); }
+    function RR(r) { return r >= 24 ? r + 2 * off : r > 10 ? r + off : r; } /* rows below the GC block shift by off, below the FE block by 2·off */
+    var rFirst = 11, rLast = 10 + N, rAvgPpm = RR(15), rFeH1 = RR(16), rFeH2 = RR(17), rFe0 = RR(18), rFeAvg = rFe0 + N;
+    var rLiqT = RR(24), rLiqH = RR(25), rWE = RR(26), rCE = RR(27), rQw = RR(28), rQc = RR(29), rLFE = RR(30);
+    var rOv = RR(33), rOvH = RR(34), rOvFE = RR(35), rOvJ = RR(36), rFm = RR(37), rC = RR(38), rH = RR(39), rO = RR(40), rNe = RR(41);
+    var rEx = RR(42), rExFE = RR(43), rExJ = RR(44), rExC = RR(45), rExH = RR(46), rExO = RR(47), rExNe = RR(48);
+    /* --- header rows 1-7 --- */
+    var mt = meta || GC.exportMeta || {};
+    put("A1", "Sample ID"); put("B1", mt.name || "");
+    put("C1", "Feedstock"); put("D1", "CO2");
+    put("E1", "WE"); put("F1", mt.catalyst || "");
+    put("I1", "Electrolyte"); put("J1", mt.electrolyte || "");
+    put("M1", "CE"); put("O1", "GDL");
+    put("R1", "Parameters & Constants"); mg("R1", "W1");
+    put("R2", "p (Pa)"); put("S2", P); put("T2", "R"); put("U2", R); put("V2", "T (K)"); put("W2", T);
+    put("R3", "V1 (mL)"); put("S3", 1); put("T3", "V2 (mL)"); put("U3", 1); put("V3", "V3 (mL)"); put("W3", 1);
+    var n1 = P * 1e-6 / (R * T);
+    put("R4", "n1 (mol)"); put("S4", F("($S$2*(S3/10^6))/($U$2*$W$2)", n1));
+    put("T4", "n2 (mol)"); put("U4", F("($S$2*(U3/10^6))/($U$2*$W$2)", n1));
+    put("V4", "n3 (mol)"); put("W4", F("($S$2*(W3/10^6))/($U$2*$W$2)", n1));
+    put("R5", "F (C/mol)"); put("S5", GC.F); put("T5", "v0 (sccm)"); put("U5", pnum(S.flow)); put("V5", "t0 (s)");
+    put("R6", "S (cm2)"); put("S6", pnum(S.area)); put("T6", "Vw (mL)"); put("U6", pnum(S.Vw)); put("V6", "Vc (mL)"); put("W6", pnum(S.Vc));
+    var irs = D.map(function (o) { return L.results[o.i].ir; }), ir0 = irs[0] || {}, ci = S.irMode === "ci";
+    var sc = S.sched || {}, gap = pnum(sc.ana) * 60 + pnum(sc.post), fC = ci ? NaN : pnum(S.fComp);
+    put("G1", "If CI is used, V RHE"); put("K1", "If no CI is used, V SHE");
+    put("H2", ci ? "with CI" : "without CI"); put("J2", "pH"); put("K2", pnum(S.pH));
+    put("T2", "R (J K-1 mol-1)");
+    put("A3", "Catalyst loading"); put("C3", "Mass loading (mg cm-2)"); put("E3", "Vulcan 72 amount (mg/cm2)");
+    put("I3", "cathode"); put("J3", pnum(S.Vw)); put("K3", "anode"); put("L3", pnum(S.Vc));
+    put("M3", "Gas pressure (PSIA)"); put("O3", "Flooding"); put("X3", ir0.slope);
+    put("H4", "Fill in only if CI isn't used");
+    put("A5", "1st Injection Time (s)"); put("B5", pnum(sc.t1));
+    put("C5", "Gas Transit Volume (mL)"); put("E5", "Gas Delay (s)"); put("F5", gap);
+    put("H5", "Value of Ru before"); put("H7", "Value of Ru after");
+    if (!ci) { put("I5", pnum(S.Ru)); put("I7", pnum(S.Ru)); }
+    put("J5", "V RHE uncompensated");
+    var eunc = irs.map(function (x) { return x.noPh ? x.E_applied : x.E_applied + x.E0 + x.slope * pnum(S.pH); }).filter(isFinite);
+    put("K5", eunc.length ? mstat(eunc).m : NaN);
+    put("L5", "Average Current (A)"); put("M5", F("AVERAGE(D" + rFirst + ":D" + rLast + ")"));
+    put("N5", "Potential  vs RHE"); put("O5", F("K5-M7"));
+    put("J6", ci ? "Average Ru (CI: compensated in real time → 0)" : "Average Ru (" + (isFinite(fC) ? fC : 0) + "% Ru Compensation → Ru·(1−f/100))");
+    put("K6", ci ? 0 : F("AVERAGE(I5,I7)*(1-" + (isFinite(fC) ? fC : 0) + "/100)"));
+    put("L7", "Effective Voltage"); put("M7", F("K6*M5"));
+    var jabs = D.map(function (o) { return Math.abs(L.results[o.i].j); }).filter(isFinite), jm = jabs.length ? mstat(jabs).m : NaN;
+    put("A7", "Total Charge (Take from Gamry CA Data)"); put("B7", pnum(S.Q));
+    put("C7", "Max Current (A)"); put("D7", F("-MIN(D" + rFirst + ":D" + rLast + ")"));
+    put("E7", "J (mA/cm2)"); put("F7", jm);
+    /* --- GC block rows 9-14 --- */
+    put("A9", "Vial"); mg("A9", "A10"); put("B9", "t (s)"); mg("B9", "B10"); put("C9", "E (V vs ref)"); mg("C9", "C10"); put("D9", "I (A)"); mg("D9", "D10");
+    put("E9", "Conc. From GC (ppm)"); mg("E9", "AB9");
+    put("AC9", "V (sccm)"); mg("AC9", "AC10"); put("AD9", "t1 (s)"); put("AE9", "t2 (s)"); put("AF9", "t3 (s)");
+    put("AG9", "It1 (C)"); put("AH9", "It2 (C)"); put("AI9", "It3 (C)");
+    put("AJ9", "Total Charge to Generate Product [n1*Conc.*Ne*F (C)]"); mg("AJ9", "BG9");
+    REF_GAS.forEach(function (k, g) { put(colL(4 + g) + "10", REF_GAS_LBL[g]); put(colL(35 + g) + "10", REF_GAS_LBL[g]); });
+    D.forEach(function (o, i) {
+      var r = rFirst + i, res = L.results[o.i], ir = res.ir || {}, flow = pnum(S.flow), Ia = -res.I_mA / 1000;
+      put("A" + r, i + 1);
+      var tv = pnum(o.v.t), tSch = pnum(sc.t1) + i * gap;
+      put("B" + r, isFinite(tv) && Math.abs(tv - tSch) < 1e-6 ? F(i ? "B" + (r - 1) + "+$F$5" : "B5", tv) : tv); put("C" + r, ir.E_applied); put("D" + r, Ia);
+      put("AC" + r, flow);
+      ["AD", "AE", "AF"].forEach(function (cl, z) { put(cl + r, F("$" + ["S", "U", "W"][z] + "$3/AC" + r + "*60", 60 / flow)); });
+      ["AG", "AH", "AI"].forEach(function (cl, z) { put(cl + r, F("D" + r + "*" + ["AD", "AE", "AF"][z] + r, Ia * 60 / flow)); });
+      REF_GAS.forEach(function (k, g) {
+        var p = byId[k]; if (!p) return; var ppm = pnum(o.v.ppm[k]); if (!isFinite(ppm)) return;
+        put(colL(4 + g) + r, ppm);
+        var nref = k === "CO" ? "$U$4" : k === "H2" ? "$W$4" : "$S$4";
+        put(colL(35 + g) + r, F(nref + "*(" + colL(4 + g) + r + "/10^6)*" + colL(1 + g) + "$" + rNe + "*$S$5", n1 * ppm * 1e-6 * p.n * GC.F));
+        var it = k === "CO" ? "AH" : k === "H2" ? "AI" : "$AG";
+        var x = res.per[k];
+        put(colL(3 + g) + (rFe0 + i), F("-" + colL(35 + g) + r + "/" + it + r + "*100", x ? x.fe : NaN));
+      });
+      /* FE table row */
+      var rr = rFe0 + i;
+      put("A" + rr, i + 1); put("B" + rr, ir.E_RHE); put("C" + rr, F("D" + r + "/$S$6*10^3", -res.j));
+      put("AB" + rr, F("SUM(D" + rr + ":AA" + rr + ")", res.total));
+    });
+    /* Average ppm row (reference grouping: C4 and C5/C6 isomers summed) */
+    put("A" + rAvgPpm, "Average Total C1-C6 (ppm)"); mg("A" + rAvgPpm, "D" + rAvgPpm);
+    var av = function (c) { return "AVERAGE(" + c + rFirst + ":" + c + rLast + ")"; };
+    var hasCol = function (cs) { return cs.some(function (c) { for (var r = rFirst; r <= rLast; r++) if (ws[c + r]) return true; return false; }); };
+    [["E"], ["F"], ["G"], ["H"], ["I"], ["J", "K"], ["L", "M", "N", "O"], ["P", "Q"], ["S", "T", "U", "V"], ["W"], ["X", "Y", "Z"]].forEach(function (grp) {
+      var have = grp.filter(function (c) { return hasCol([c]); }); if (!have.length) return;
+      put(grp[0] + rAvgPpm, F(have.map(av).join("+")));
+    });
+    ["AA", "AB"].forEach(function (c) { if (hasCol([c])) put(c + rAvgPpm, F(av(c))); });
+    /* FE header + average */
+    put("A" + rFeH1, "Vial"); mg("A" + rFeH1, "A" + rFeH2); put("B" + rFeH1, "E (V vs RHE)"); mg("B" + rFeH1, "B" + rFeH2);
+    put("C" + rFeH1, "j (mA/cm2)"); mg("C" + rFeH1, "C" + rFeH2); put("D" + rFeH1, "FE (%)"); mg("D" + rFeH1, "AB" + rFeH1);
+    put("AG" + rFeH1, "Experimental Comments"); if (S.notes) put("AG" + rFeH2, S.notes);
+    REF_GAS.forEach(function (k, g) { put(colL(3 + g) + rFeH2, REF_GAS_LBL[g]); }); put("AB" + rFeH2, "Sum");
+    put("A" + rFeAvg, "Average (1-" + N + ")");
+    var fa = function (c) { return "AVERAGE(" + c + rFe0 + ":" + c + (rFe0 + N - 1) + ")"; };
+    ["B", "C"].forEach(function (c) { put(c + rFeAvg, F(fa(c))); });
+    var agFE = {};
+    REF_GAS.forEach(function (k, g) {
+      var c = colL(3 + g), have = false; for (var i = 0; i < N; i++) if (ws[c + (rFe0 + i)]) have = true;
+      if (!have) return;
+      var vals = D.map(function (o) { var x = L.results[o.i].per[k]; return x ? x.fe : NaN; }).filter(isFinite);
+      agFE[k] = mstat(vals).m; put(c + rFeAvg, F(fa(c), agFE[k]));
+    });
+    put("AB" + rFeAvg, F(fa("AB")));
+    /* --- Liquids rows 24-30 --- */
+    put("A" + rLiqT, "Liquid Products (HPLC -FA ; HSGC - Oxygenates)");
+    put("A" + rWE, "Conc. of Products from Working Electrode (μM)"); put("A" + rCE, "Conc of Products from Counter Electrode (μM)");
+    put("A" + rQw, "Cw*Vw*Ne*F (C)"); put("A" + rQc, "Cc*Vc*Ne*F (C)"); put("A" + rLFE, "FE (%)");
+    function neRef(k) { var i = REF_OV_LIQ.indexOf(k); if (i >= 0) return colL(25 + i) + rNe; return colL(1 + REF_EXTRA.indexOf(k)) + rExNe; }
+    function ovFERef(k) { var i = REF_OV_LIQ.indexOf(k); if (i >= 0) return colL(25 + i) + rOvFE; return colL(1 + REF_EXTRA.indexOf(k)) + rExFE; }
+    var liqCols = [];
+    REF_LIQ.forEach(function (k, i) {
+      var c = colL(1 + i); put(c + rLiqH, REF_LIQ_LBL[i]);
+      var p = byId[k], slot = S.liq[k]; if (!p || !slot) return;
+      var we = pnum(slot.we), ce = pnum(slot.ce); if (!isFinite(we) && !isFinite(ce)) return;
+      put(c + rWE, isFinite(we) ? we : 0); put(c + rCE, isFinite(ce) ? ce : 0);
+      put(c + rQw, F("(" + c + rWE + "/10^6)*($U$6/10^3)*" + neRef(k) + "*$S$5"));
+      put(c + rQc, F("(" + c + rCE + "/10^6)*($W$6/10^3)*" + neRef(k) + "*$S$5")); /* reference used $U$6 (Vw) for some CE cells — corrected to Vc */
+      var lr = L.liq && L.liq[k];
+      put(c + rLFE, F("(" + c + rQw + "+" + c + rQc + ")/$B$7*100", lr ? lr.fe : NaN)); liqCols.push(c);
+    });
+    put("R" + rLiqH, "Sum"); put("R" + rLFE, F("SUM(B" + rLFE + ":Q" + rLFE + ")"));
+    /* --- Overall data rows 33-48 --- */
+    put("A" + rOv, "Overall Data");
+    ["FE (%)", "j (mA/cm2)", "Formula", "C number", "H number", "O number", "Ne"].forEach(function (lab, i) { put("A" + (rOvFE + i), lab); });
+    function ovCol(c, k, lbl, isLiq, rows) {
+      var p = byId[k] || (PRESETS[k] ? prodFromPreset(k) : null), f = PRESETS[k] ? PRESETS[k].formula : (p && p.formula), a = cho(f);
+      put(c + rows.h, lbl);
+      if (rows.f) put(c + rows.f, f);
+      put(c + rows.C, a.C); put(c + rows.H, a.H); put(c + rows.O, a.O);
+      var neF = 4 * a.C + a.H - 2 * a.O, nUse = p ? p.n : neF;
+      if (nUse === neF) put(c + rows.Ne, F("$AJ$" + rC + "*" + c + rows.C + "+$AJ$" + rH + "*" + c + rows.H + "+$AJ$" + rO + "*" + c + rows.O, neF));
+      else put(c + rows.Ne, nUse); /* user-edited n in the app overrides 4C+H−2O */
+      var have = isLiq ? (L.liq && L.liq[k]) : (k in agFE);
+      if (have) {
+        var src = isLiq ? (colL(1 + REF_LIQ.indexOf(k)) + rLFE) : (colL(3 + REF_GAS.indexOf(k)) + rFeAvg);
+        put(c + rows.FE, F(src, isLiq ? L.liq[k].fe : agFE[k]));
+        put(c + rows.j, F("$F$7*" + c + rows.FE + "/100"));
+      }
+    }
+    var mainRows = { h: rOvH, FE: rOvFE, j: rOvJ, f: rFm, C: rC, H: rH, O: rO, Ne: rNe };
+    REF_GAS.forEach(function (k, g) { ovCol(colL(1 + g), k, REF_GAS_LBL[g], false, mainRows); });
+    REF_OV_LIQ.forEach(function (k, i) { ovCol(colL(25 + i), k, REF_OV_LIQ_LBL[i], true, mainRows); });
+    put("AJ" + rOvH, "Total"); put("AJ" + rOvFE, F("SUM(B" + rOvFE + ":AI" + rOvFE + ")+SUM(B" + rExFE + ":G" + rExFE + ")"));
+    put("AJ" + rOvJ, F("SUM(B" + rOvJ + ":AI" + rOvJ + ",B" + rExJ + ":G" + rExJ + ")"));
+    put("AK" + rOvH, "CO2R"); put("AK" + rOvFE, F("SUM(B" + rOvFE + ":X" + rOvFE + ",Z" + rOvFE + ":AI" + rOvFE + ",B" + rExFE + ":G" + rExFE + ")"));
+    put("AK" + rOvJ, F("SUM(B" + rOvJ + ":X" + rOvJ + ",Z" + rOvJ + ":AI" + rOvJ + ",B" + rExJ + ":G" + rExJ + ")"));
+    put("AJ" + (rOvFE + 2), "e number"); put("AJ" + rC, 4); put("AJ" + rH, 1); put("AJ" + rO, -2);
+    /* C1..C6 sums of CO2R products by carbon number; HC = Σ C1..C6 */
+    var byC = {}; function addC(cell, k, exRow) { if (k === "H2") return; var n = cho(PRESETS[k].formula).C; (byC[n] = byC[n] || []).push({ c: cell, ex: exRow }); }
+    REF_GAS.forEach(function (k, g) { addC(colL(1 + g), k, false); });
+    REF_OV_LIQ.forEach(function (k, i) { addC(colL(25 + i), k, false); });
+    REF_EXTRA.forEach(function (k, i) { addC(colL(1 + i), k, true); });
+    for (var cn = 1; cn <= 6; cn++) {
+      var cl = colL(colI("AL") + cn - 1), L2 = byC[cn] || [];
+      put(cl + rOvH, "C" + cn);
+      put(cl + rOvFE, F("SUM(" + L2.map(function (e) { return e.c + (e.ex ? rExFE : rOvFE); }).join(",") + ")"));
+      put(cl + rOvJ, F("SUM(" + L2.map(function (e) { return e.c + (e.ex ? rExJ : rOvJ); }).join(",") + ")"));
+    }
+    put("AR" + rOvH, "HC"); put("AR" + rOvFE, F("SUM(AL" + rOvFE + ":AQ" + rOvFE + ")")); put("AR" + rOvJ, F("SUM(AL" + rOvJ + ":AQ" + rOvJ + ")"));
+    put("A" + rEx, "Liquid (cont.)");
+    ["FE (%)", "j (mA/cm2)", "C number", "H number", "O number", "Ne"].forEach(function (lab, i) { put("A" + (rExFE + i), lab); });
+    REF_EXTRA.forEach(function (k, i) { ovCol(colL(1 + i), k, REF_EXTRA_LBL[i], true, { h: rEx, FE: rExFE, j: rExJ, C: rExC, H: rExH, O: rExO, Ne: rExNe }); });
+    ws["!ref"] = X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: Math.max(maxC, 58) } });
+    ws["!merges"] = merges;
+    ws["!cols"] = [{ wch: 24 }];
+    var nm = String(mt.name || "Run").replace(/[\\\/\?\*\[\]:]/g, " ").slice(0, 31) || "Run";
+    return { ws: ws, name: nm, rows: { fe0: rFe0, feAvg: rFeAvg, lfe: rLFE, ovFE: rOvFE } };
+  }
+  GC.buildRefSheet = buildRefSheet; GC.prodFromPreset = prodFromPreset;
   function xlsx() {
     if (!root.XLSX) { alert("XLSX library not loaded (vendor/xlsx.full.min.js)."); return; }
     var aoa = buildExport(), ws = root.XLSX.utils.aoa_to_sheet(aoa), wb = root.XLSX.utils.book_new();
+    var ref = buildRefSheet();
+    root.XLSX.utils.book_append_sheet(wb, ref.ws, ref.name === EXPORT_TEMPLATE.sheetName || ref.name === "Meta_notes" ? ref.name + "_" : ref.name);
+    wb.Workbook = { CalcPr: { fullCalcOnLoad: true } };
     ws["!cols"] = aoa[0].map(function (h) { return { wch: Math.max(10, String(h).length + 2) }; });
     root.XLSX.utils.book_append_sheet(wb, ws, EXPORT_TEMPLATE.sheetName);
     var meta = metaRows(); meta.unshift(["field", "value"]);
+    meta.push(["sheet_layout", "Sheet '" + ref.name + "' mirrors the reference analysis workbook (same cells/labels/product order, live formulas). GC_FE = Origin-ready flat table (same as CSV)."]);
+    meta.push(["layout_rows", "When N > 4 injections, rows 15-22 shift down by (N-4) and rows 24+ by 2*(N-4) (here N = " + (ref.rows.feAvg - ref.rows.fe0) + ")."]);
+    meta.push(["layout_corrections", "vs reference: Ne refs aligned per product column; CE charge uses Vc ($W$6) for every liquid; averages span all injections (1-N); Pentanol O = 1; no external-workbook links; chain-growth (alpha) block omitted."]);
+    meta.push(["layout_constants", "R and F written at app precision (8.314462618, 96485.33212) so sheet formulas reproduce the app's FE; T/P from the app (STP mode: 273.15 K / 101325 Pa)."]);
+    meta.push(["layout_custom", "Custom (non-catalog) products appear only in GC_FE."]);
     root.XLSX.utils.book_append_sheet(wb, root.XLSX.utils.aoa_to_sheet(meta), "Meta_notes");
     GC._xlsxAoa = aoa;
     if (GC._nodl) { GC._xlsxB64 = root.XLSX.write(wb, { type: "base64", bookType: "xlsx" }); return; }
