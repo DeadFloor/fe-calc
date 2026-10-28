@@ -1339,7 +1339,10 @@
     var rows = "", tc = 0;
     order.forEach(function (o) { if (results[o.i].any) tc++; });
     var AG = tc ? aggregate(order.filter(function (o) { return results[o.i].any; }).map(function (o) { return { t: o.v.t, r: results[o.i] }; }), c) : { per: {}, tot: { fe: { m: NaN, sd: NaN } } };
+    var showEmpty = !!S.showEmpty;
     gases.forEach(function (p) {
+      var hasAny = order.some(function (o) { return results[o.i].per[p.id]; });
+      if (!showEmpty && !hasAny) return;
       rows += '<tr><th class="gc-sticky-col"><span class="gc-dot" style="background:' + p.hex + '"></span> ' + esc(prodDisplay(p)) + "</th>";
       order.forEach(function (o) {
         var x = results[o.i].per[p.id];
@@ -1812,6 +1815,8 @@
       document.querySelectorAll("#gc-chart-view .seg__btn").forEach(function (q) { q.classList.toggle("is-active", q === b); }); update(); });
     $("gc-chart").addEventListener("click", function (e) { var t = e.target.getAttribute && e.target.getAttribute("data-tip"); if (t) $("gc-tip").textContent = t; });
     if (location.hash.indexOf("chartonly") > -1) document.body.classList.add("chart-only");
+    var se = $("gc-show-empty");
+    if (se) { se.checked = !!S.showEmpty; se.addEventListener("change", function (e) { S.showEmpty = e.target.checked; update(); }); }
     $("gc-reset").addEventListener("click", function () { if (confirm("Clear all GC inputs?")) { S = defaults(); full(); } });
     full();
     if (getUiMode() === "guided") setWizStep(1);
