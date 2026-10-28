@@ -1678,10 +1678,19 @@
     ws["!merges"] = merges;
     ws["!cols"] = [{ wch: 24 }];
     var nm = String(mt.name || "Run").replace(/[\\\/\?\*\[\]:]/g, " ").slice(0, 31) || "Run";
-    return { ws: ws, name: nm, rows: { fe0: rFe0, feAvg: rFeAvg, lfe: rLFE, ovFE: rOvFE } };
+    return { ws: ws, name: nm, merges: merges, rows: { first: rFirst, last: rLast, avgPpm: rAvgPpm, feH1: rFeH1, feH2: rFeH2, fe0: rFe0, feAvg: rFeAvg, liqT: rLiqT, liqH: rLiqH, we: rWE, ce: rCE, qw: rQw, qc: rQc, lfe: rLFE, ov: rOv, ovH: rOvH, ovFE: rOvFE, ovJ: rOvJ, fm: rFm, C: rC, H: rH, O: rO, Ne: rNe, ex: rEx, exFE: rExFE, exJ: rExJ, exC: rExC, exNe: rExNe } };
   }
   GC.buildRefSheet = buildRefSheet; GC.prodFromPreset = prodFromPreset;
-  function xlsx() {
+  function fullMeta(ref) {
+    var meta = metaRows(); meta.unshift(["field", "value"]);
+    meta.push(["sheet_layout", "Sheet '" + ref.name + "' mirrors the reference analysis workbook (same cells/labels/product order, live formulas). GC_FE = Origin-ready flat table (same as CSV)."]);
+    meta.push(["layout_rows", "When N > 4 injections, rows 15-22 shift down by (N-4) and rows 24+ by 2*(N-4) (here N = " + (ref.rows.feAvg - ref.rows.fe0) + ")."]);
+    meta.push(["layout_corrections", "vs reference: Ne refs aligned per product column; CE charge uses Vc ($W$6) for every liquid; averages span all injections (1-N); Pentanol O = 1; no external-workbook links; chain-growth (alpha) block omitted."]);
+    meta.push(["layout_constants", "R and F written at app precision (8.314462618, 96485.33212) so sheet formulas reproduce the app's FE; T/P from the app (STP mode: 273.15 K / 101325 Pa)."]);
+    meta.push(["layout_custom", "Custom (non-catalog) products appear only in GC_FE."]);
+    return meta;
+  }
+  function xlsxPlain() {
     if (!root.XLSX) { alert("XLSX library not loaded (vendor/xlsx.full.min.js)."); return; }
     var aoa = buildExport(), ws = root.XLSX.utils.aoa_to_sheet(aoa), wb = root.XLSX.utils.book_new();
     var ref = buildRefSheet();
@@ -1689,18 +1698,128 @@
     wb.Workbook = { CalcPr: { fullCalcOnLoad: true } };
     ws["!cols"] = aoa[0].map(function (h) { return { wch: Math.max(10, String(h).length + 2) }; });
     root.XLSX.utils.book_append_sheet(wb, ws, EXPORT_TEMPLATE.sheetName);
-    var meta = metaRows(); meta.unshift(["field", "value"]);
-    meta.push(["sheet_layout", "Sheet '" + ref.name + "' mirrors the reference analysis workbook (same cells/labels/product order, live formulas). GC_FE = Origin-ready flat table (same as CSV)."]);
-    meta.push(["layout_rows", "When N > 4 injections, rows 15-22 shift down by (N-4) and rows 24+ by 2*(N-4) (here N = " + (ref.rows.feAvg - ref.rows.fe0) + ")."]);
-    meta.push(["layout_corrections", "vs reference: Ne refs aligned per product column; CE charge uses Vc ($W$6) for every liquid; averages span all injections (1-N); Pentanol O = 1; no external-workbook links; chain-growth (alpha) block omitted."]);
-    meta.push(["layout_constants", "R and F written at app precision (8.314462618, 96485.33212) so sheet formulas reproduce the app's FE; T/P from the app (STP mode: 273.15 K / 101325 Pa)."]);
-    meta.push(["layout_custom", "Custom (non-catalog) products appear only in GC_FE."]);
+    var meta = fullMeta(ref);
     root.XLSX.utils.book_append_sheet(wb, root.XLSX.utils.aoa_to_sheet(meta), "Meta_notes");
     GC._xlsxAoa = aoa;
     if (GC._nodl) { GC._xlsxB64 = root.XLSX.write(wb, { type: "base64", bookType: "xlsx" }); return; }
     var out = root.XLSX.write(wb, { type: "array", bookType: "xlsx" });
     dl(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), EXPORT_TEMPLATE.fileStem + "_" + stamp() + ".xlsx");
   }
+  /* ===== Styled export (ExcelJS, vendored offline; MIT) ===== */
+  var XS = {
+    navy: "FF14213D", grey: "FFE9ECEF", yellow: "FFFFF6CC", orange: "FFFDE8D0", white: "FFFFFFFF",
+    thin: { style: "thin", color: { argb: "FFB8BEC6" } }
+  };
+  function fill(argb) { return { type: "pattern", pattern: "solid", fgColor: { argb: argb } }; }
+  function box() { return { top: XS.thin, left: XS.thin, bottom: XS.thin, right: XS.thin }; }
+  function xlsxStyled() {
+    var X = root.XLSX, EJ = root.ExcelJS, ref = buildRefSheet(), aoa = buildExport(), meta = fullMeta(ref), R = ref.rows;
+    var wb = new EJ.Workbook(); wb.creator = "FE Calculator " + (root.APP_VERSION || ""); wb.calcProperties = { fullCalcOnLoad: true };
+    var nm = (ref.name === EXPORT_TEMPLATE.sheetName || ref.name === "Meta_notes") ? ref.name + "_" : ref.name;
+    var s1 = wb.addWorksheet(nm, { views: [{ showGridLines: false }] });
+    var font = { name: "Calibri", size: 10 };
+    /* values + formulas */
+    Object.keys(ref.ws).forEach(function (a1) {
+      if (a1.charAt(0) === "!") return;
+      var c = ref.ws[a1], cell = s1.getCell(a1);
+      cell.value = c.f ? (isFinite(c.v) ? { formula: c.f, result: c.v } : { formula: c.f }) : c.v;
+      cell.font = font;
+    });
+    var CL = X.utils.encode_col, CI = X.utils.decode_col;
+    function rng(c0, r0, c1, r1, fn) { for (var r = r0; r <= r1; r++) for (var c = CI(c0); c <= CI(c1); c++) fn(s1.getCell(CL(c) + r), r, CL(c)); }
+    function fmt(c0, r0, c1, r1, f) { rng(c0, r0, c1, r1, function (x) { x.numFmt = f; }); }
+    function table(c0, r0, c1, r1) { rng(c0, r0, c1, r1, function (x) { x.border = box(); }); }
+    function head(c0, r0, c1, r1, argb) { rng(c0, r0, c1, r1, function (x) { x.fill = fill(argb || XS.grey); x.font = { name: "Calibri", size: 10, bold: true }; x.alignment = { horizontal: "center", vertical: "middle", wrapText: true }; }); }
+    function hl(c0, r0, c1, r1) { rng(c0, r0, c1, r1, function (x) { x.fill = fill(XS.orange); x.font = { name: "Calibri", size: 10, bold: true }; }); }
+    function title(a1, toCol) {
+      var r = +a1.replace(/[A-Z]+/, ""), c = a1.replace(/\d+/, "");
+      if (toCol) { try { s1.mergeCells(a1 + ":" + toCol + r); } catch (e) {} }
+      var x = s1.getCell(a1); x.fill = fill(XS.navy); x.font = { name: "Calibri", size: 11, bold: true, color: { argb: XS.white } }; x.alignment = { vertical: "middle" };
+    }
+    (ref.merges || []).forEach(function (m) { try { s1.mergeCells(X.utils.encode_range(m)); } catch (e) {} });
+    /* header & parameters (rows 1-7): labels bold grey, values soft yellow */
+    rng("A", 1, "W", 7, function (x, r, c) {
+      if (x.value == null || x.isMerged && x.master !== x) return;
+      if (typeof x.value === "string") { x.font = { name: "Calibri", size: 10, bold: true }; x.fill = fill(XS.grey); x.alignment = { wrapText: true, vertical: "middle" }; }
+      else { x.fill = fill(XS.yellow); }
+      x.border = box();
+    });
+    title("R1");
+    fmt("S", 4, "W", 4, "0.000E+00"); ["F7", "K5", "M7", "O5", "X3"].forEach(function (a) { s1.getCell(a).numFmt = "0.000"; });
+    ["M5", "D7"].forEach(function (a) { s1.getCell(a).numFmt = "0.0000"; }); ["B5", "F5", "B7"].forEach(function (a) { s1.getCell(a).numFmt = "0"; });
+    /* GC block */
+    head("A", 9, "BG", 10); s1.getCell("E9").fill = fill(XS.yellow); s1.getCell("AJ9").fill = fill(XS.yellow);
+    table("A", 9, "BG", R.last);
+    fmt("A", R.first, "A", R.last, "0"); fmt("B", R.first, "B", R.last, "0"); fmt("C", R.first, "C", R.last, '0.000" V"');
+    fmt("D", R.first, "D", R.last, "0.0000"); fmt("E", R.first, "AB", R.last, "0"); fmt("AC", R.first, "AC", R.last, "0.0");
+    fmt("AD", R.first, "AF", R.last, "0"); fmt("AG", R.first, "AI", R.last, "0.000"); fmt("AJ", R.first, "BG", R.last, "0.000E+00");
+    table("A", R.avgPpm, "AB", R.avgPpm); hl("A", R.avgPpm, "AB", R.avgPpm); fmt("E", R.avgPpm, "AB", R.avgPpm, "0");
+    /* FE table */
+    head("A", R.feH1, "AB", R.feH2); s1.getCell("D" + R.feH1).fill = fill(XS.yellow);
+    title("AG" + R.feH1, "AL"); rng("AG", R.feH2, "AL", R.feH2 + 3, function (x) { x.border = box(); x.alignment = { wrapText: true, vertical: "top" }; });
+    try { s1.mergeCells("AG" + R.feH2 + ":AL" + (R.feH2 + 3)); } catch (e) {}
+    table("A", R.fe0, "AB", R.feAvg);
+    fmt("A", R.fe0, "A", R.feAvg - 1, "0"); fmt("B", R.fe0, "B", R.feAvg, '0.000" V"'); fmt("C", R.fe0, "C", R.feAvg, "0.000"); fmt("D", R.fe0, "AB", R.feAvg, "0.00");
+    hl("AB", R.fe0, "AB", R.feAvg - 1); hl("A", R.feAvg, "AB", R.feAvg);
+    /* Liquids */
+    title("A" + R.liqT, "R");
+    head("A", R.liqH, "R", R.liqH); table("A", R.liqH, "R", R.lfe);
+    rng("A", R.we, "A", R.lfe, function (x) { x.font = { name: "Calibri", size: 10, bold: true }; x.alignment = { wrapText: true }; });
+    fmt("B", R.we, "Q", R.ce, "0"); fmt("B", R.qw, "Q", R.qc, "0.000"); fmt("B", R.lfe, "R", R.lfe, "0.00"); hl("R", R.liqH, "R", R.lfe);
+    /* Overall data */
+    title("A" + R.ov, "AR");
+    head("A", R.ovH, "AR", R.ovH); table("A", R.ovH, "AR", R.Ne);
+    rng("A", R.ovFE, "A", R.Ne, function (x) { x.font = { name: "Calibri", size: 10, bold: true }; });
+    fmt("B", R.ovFE, "AR", R.ovFE, "0.00"); fmt("B", R.ovJ, "AR", R.ovJ, "0.000"); fmt("B", R.C, "AI", R.Ne, "0");
+    hl("AJ", R.ovH, "AR", R.ovJ); rng("AJ", R.fm, "AJ", R.O, function (x) { x.fill = fill(XS.yellow); x.font = { name: "Calibri", size: 10, bold: true }; });
+    head("A", R.ex, "G", R.ex); table("A", R.ex, "G", R.exNe);
+    rng("A", R.exFE, "A", R.exNe, function (x) { x.font = { name: "Calibri", size: 10, bold: true }; });
+    fmt("B", R.exFE, "G", R.exFE, "0.00"); fmt("B", R.exJ, "G", R.exJ, "0.000"); fmt("B", R.exC, "G", R.exNe, "0");
+    /* widths / heights */
+    for (var c = 1; c <= 59; c++) s1.getColumn(c).width = 11;
+    s1.getColumn(1).width = 30; s1.getRow(9).height = 30; s1.getRow(R.ovH).height = 28; s1.getRow(R.liqH).height = 28; s1.getRow(R.feH2).height = 28;
+    s1.views = [{ showGridLines: false, state: "frozen", xSplit: 1, ySplit: 0 }];
+
+    /* GC_FE: plain, one header row, no merges — Origin-ready */
+    var s2 = wb.addWorksheet(EXPORT_TEMPLATE.sheetName, { views: [{ state: "frozen", xSplit: 1, ySplit: 1 }] });
+    var hdr = aoa[0];
+    function colFmt(h) {
+      if (/^t_inj/.test(h)) return "0"; if (/^ppm_/.test(h)) return "0"; if (/^FE_/.test(h)) return "0.00";
+      if (/^E_/.test(h)) return '0.000'; if (/^j/.test(h) || /^I \(/.test(h)) return "0.000"; if (/^Ru/.test(h)) return "0.00"; return "General";
+    }
+    aoa.forEach(function (row, ri) {
+      var r = s2.addRow(row.map(function (v) { return v == null ? null : v; }));
+      r.eachCell({ includeEmpty: true }, function (x, ci) {
+        x.font = { name: "Calibri", size: 10, bold: ri === 0 }; x.border = box();
+        if (ri === 0) { x.fill = fill(XS.grey); x.alignment = { wrapText: true, vertical: "middle", horizontal: "center" }; }
+        else x.numFmt = colFmt(hdr[ci - 1]);
+      });
+      if (ri > 0 && typeof row[0] === "string") r.eachCell({ includeEmpty: true }, function (x) { x.fill = fill(XS.orange); x.font = { name: "Calibri", size: 10, bold: true }; });
+    });
+    s2.getRow(1).height = 45;
+    hdr.forEach(function (h, i) { s2.getColumn(i + 1).width = Math.min(22, Math.max(10, String(h).length * 0.55 + 4)); });
+    s2.getColumn(1).width = 13;
+
+    /* Meta_notes */
+    var s3 = wb.addWorksheet("Meta_notes");
+    s3.columns = [{ width: 28 }, { width: 100 }];
+    meta.forEach(function (row, ri) {
+      var r = s3.addRow([row[0], row[1] == null ? "" : row[1]]);
+      r.getCell(1).font = { name: "Calibri", size: 10, bold: true }; r.getCell(2).font = { name: "Calibri", size: 10 };
+      r.eachCell({ includeEmpty: true }, function (x) { x.alignment = { wrapText: true, vertical: "top" }; x.border = box(); });
+      if (ri === 0) r.eachCell(function (x) { x.fill = fill(XS.navy); x.font = { name: "Calibri", size: 11, bold: true, color: { argb: XS.white } }; });
+    });
+    GC._xlsxAoa = aoa;
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      if (GC._nodl) { var b = new Uint8Array(buf), s = ""; for (var i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); GC._xlsxB64 = btoa(s); return; }
+      dl(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), EXPORT_TEMPLATE.fileStem + "_" + stamp() + ".xlsx");
+    });
+  }
+  function xlsx() {
+    if (root.ExcelJS && root.XLSX) return xlsxStyled().catch(function (e) { console.error(e); return xlsxPlain(); });
+    return Promise.resolve(xlsxPlain());
+  }
+
   function syncControls() {
     ["area", "flow", "T", "P", "Eset", "Iset", "jset", "E0", "pH", "Ru", "fComp"].forEach(function (k) {
       var el = $("gc-" + k); if (el && S[k] != null) el.value = S[k];
