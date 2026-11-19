@@ -7,7 +7,8 @@ var ASSETS = [
   "./fonts/IBMPlexSans-Variable.ttf", "./fonts/IBMPlexMono-Regular.ttf", "./fonts/IBMPlexMono-Medium.ttf",
   "./fonts/IBMPlexMono-SemiBold.ttf", "./fonts/IBMPlexMono-Bold.ttf",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-192.png", "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png", "./icons/favicon-32.png"
+  "./icons/apple-touch-icon.png", "./icons/favicon-32.png",
+  "./stability/", "./stability/index.html", "./stability/stability.css", "./stability/stability-core.js", "./stability/stability.js"
 ];
 
 self.addEventListener("install", function (e) {
@@ -29,12 +30,15 @@ self.addEventListener("activate", function (e) {
 self.addEventListener("fetch", function (e) {
   var req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
-  var isPage = req.mode === "navigate" || /\/(index\.html)?$/.test(new URL(req.url).pathname);
+  var path = new URL(req.url).pathname, isStab = /\/stability(\/|\/index\.html)?$/.test(path);
+  var isPage = req.mode === "navigate" || /\/(index\.html)?$/.test(path);
   if (isPage) {
-    // network-first for the HTML shell
+    // network-first for the HTML shells; each page falls back to its own cached copy
+    var key = isStab ? "./stability/index.html" : "./index.html";
     e.respondWith(fetch(req).then(function (res) {
-      var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put("./index.html", copy); }); return res;
-    }).catch(function () { return caches.match("./index.html", { ignoreSearch: true }); }));
+      if (res.ok) { var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(key, copy); }); }
+      return res;
+    }).catch(function () { return caches.match(key, { ignoreSearch: true }); }));
     return;
   }
   // cache-first for static assets

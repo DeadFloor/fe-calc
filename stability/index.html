@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <title>24 h stability test (CP) — eCO₂RR FE Calculator</title>
+  <meta name="theme-color" content="#14213D" />
+  <link rel="manifest" href="../manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="FE Stability" />
+  <link rel="stylesheet" href="../design-tokens.css" />
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="./stability.css" />
+</head>
+<body>
+  <div class="app st-app">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <p class="app-header__eyebrow"><a class="st-back" href="../">← FE calculator</a></p>
+        <h1 class="app-header__title">Stability test · 24 h CP</h1>
+        <p class="app-header__subtitle">Injection and swap schedule, block-averaged gas FE, liquid FE per electrolyte window, E vs t and a stability check. All times Singapore (SGT, UTC+8). Data stays on this device.</p>
+      </div>
+    </header>
+
+    <main class="app-main st-main" id="app-main">
+      <div class="hx-bar st-bar" role="toolbar" aria-label="Run data">
+        <button type="button" class="btn btn--secondary hx-bar__btn" id="st-save">Save run<span class="hx-dot" id="st-dirty" hidden title="Unsaved changes"></span></button>
+        <button type="button" class="btn btn--ghost hx-bar__btn" id="st-open">My runs</button>
+        <button type="button" class="btn btn--cta hx-bar__btn" id="st-export">Export Excel</button>
+      </div>
+
+      <!-- Live status -->
+      <section class="st-live" id="st-live" aria-live="polite">
+        <div class="st-live__item"><span class="st-live__k">Next injection</span><b class="st-live__v" id="lv-inj">—</b><span class="st-live__s" id="lv-inj-s"></span></div>
+        <div class="st-live__item"><span class="st-live__k">Next swap</span><b class="st-live__v" id="lv-swap">—</b><span class="st-live__s" id="lv-swap-s"></span></div>
+        <div class="st-live__item"><span class="st-live__k">Run</span><b class="st-live__v" id="lv-run">—</b><span class="st-live__s" id="lv-run-s"></span></div>
+      </section>
+      <div class="st-msgs" id="st-msgs"></div>
+
+      <!-- 1 Setup -->
+      <article class="calc-card" id="card-setup">
+        <header class="calc-card__header"><h2 class="calc-card__title">1 · Cell and potential</h2>
+          <p class="calc-card__desc">Constant current (CP), area and CO₂ flow set the FE scale. Reference, pH and iR mode convert E to E<sub>RHE</sub> exactly as in the FE calculator.</p></header>
+        <div class="gc-grid">
+          <label class="field"><span class="field__label">CP current |I| (mA)</span><input class="input" inputmode="decimal" data-s="I_mA" placeholder="e.g. 50"><span class="field__help">Magnitude of the applied current.</span></label>
+          <label class="field"><span class="field__label">Geometric area (cm²)</span><input class="input" inputmode="decimal" data-s="area"></label>
+          <label class="field"><span class="field__label">CO₂ flow (sccm = mL min⁻¹)</span><input class="input" inputmode="decimal" data-s="flow"></label>
+          <div class="field"><span class="field__label">Flow reference</span>
+            <div class="seg" role="radiogroup" data-seg="gasRef"><button type="button" class="seg__btn" data-v="std">Standard 273.15 K</button><button type="button" class="seg__btn" data-v="custom">Custom T, P</button></div></div>
+          <label class="field st-gas-custom"><span class="field__label">Gas T (K)</span><input class="input" inputmode="decimal" data-s="T"></label>
+          <label class="field st-gas-custom"><span class="field__label">Gas P (Pa)</span><input class="input" inputmode="decimal" data-s="P"></label>
+          <label class="field"><span class="field__label">Electrolyte pH</span><input class="input" inputmode="decimal" data-s="pH" placeholder="e.g. 6.8"><span class="field__help">Blank → E vs reference only.</span></label>
+          <label class="field"><span class="field__label">Reference electrode</span><select class="input" data-s="eref" id="st-eref"></select></label>
+          <label class="field st-e0"><span class="field__label">E°ref vs SHE (V)</span><input class="input" inputmode="decimal" data-s="E0"></label>
+          <div class="field"><span class="field__label">Nernst slope</span>
+            <div class="seg" role="radiogroup" data-seg="slopeMode"><button type="button" class="seg__btn" data-v="0591">0.0591 V</button><button type="button" class="seg__btn" data-v="nernst">2.303 RT/F</button></div></div>
+          <div class="field gc-wide"><span class="field__label">iR compensation</span>
+            <div class="seg" role="radiogroup" data-seg="irMode"><button type="button" class="seg__btn" data-v="ci">Current interrupt (CI)</button><button type="button" class="seg__btn" data-v="manual">Manual Ru</button></div>
+            <span class="field__help st-ci-note">CI: compensated in real time, E<sub>corr</sub> = E.</span></div>
+          <label class="field st-ir-manual"><span class="field__label">Ru (Ω)</span><input class="input" inputmode="decimal" data-s="Ru" placeholder="e.g. 3.2"></label>
+          <label class="field st-ir-manual"><span class="field__label">% compensated during run</span><input class="input" inputmode="decimal" data-s="fComp"><span class="field__help">E<sub>corr</sub> = E + |I|·Ru·(1 − f).</span></label>
+          <p class="gc-wide gc-hint" id="st-cond"></p>
+        </div>
+      </article>
+
+      <!-- 2 Timing -->
+      <article class="calc-card" id="card-timing">
+        <header class="calc-card__header"><h2 class="calc-card__title">2 · Timing and schedule</h2>
+          <p class="calc-card__desc">t<sub>k</sub> = t<sub>first</sub> + (k − 1)·interval; block = floor((t<sub>k</sub> − t<sub>0</sub>)/block length). Use the measured interval, not a rounded one.</p></header>
+        <div class="gc-grid">
+          <label class="field"><span class="field__label">Run start t₀ (SGT)</span><input class="input" type="datetime-local" step="1" data-s="runStart"></label>
+          <label class="field"><span class="field__label">First injection (SGT)</span><input class="input" type="datetime-local" step="1" data-s="firstInj"></label>
+          <label class="field"><span class="field__label">Injection interval (s)</span><input class="input" inputmode="decimal" data-s="interval"><span class="field__help">Measured GC cycle; default 1287 s.</span></label>
+          <label class="field"><span class="field__label">Gas block length (h)</span><input class="input" inputmode="decimal" data-s="blockH"></label>
+          <label class="field"><span class="field__label">Run length (h)</span><input class="input" inputmode="decimal" data-s="runH"></label>
+          <label class="field"><span class="field__label">Liquid window target (h)</span><input class="input" inputmode="decimal" data-s="liqH"><span class="field__help">Used by “Auto-place swaps”.</span></label>
+          <div class="field gc-wide st-anchor">
+            <span class="field__label">Re-anchor to the actual injection time</span>
+            <div class="st-row">
+              <label class="st-anchor__k"><span class="sr-only">Injection number</span><span aria-hidden="true">#</span><input class="input" inputmode="numeric" id="an-k" value="1" aria-label="Injection number"></label>
+              <input class="input st-grow" type="datetime-local" step="1" id="an-t" aria-label="Actual time of that injection (SGT)">
+            </div>
+            <div class="st-row">
+              <button type="button" class="btn btn--ghost st-grow" id="an-now">Use time now</button>
+              <button type="button" class="btn btn--secondary st-grow" id="an-apply">Re-anchor</button>
+            </div>
+            <span class="field__help">Shifts the first-injection time so injection # lands on the time you saw in the GC log.</span>
+          </div>
+          <div class="gc-wide" id="st-blocks"></div>
+          <details class="gc-wide st-fold"><summary>Full injection schedule</summary><div id="st-schedule"></div></details>
+        </div>
+      </article>
+
+      <!-- 3 Swaps -->
+      <article class="calc-card" id="card-swaps">
+        <header class="calc-card__header"><h2 class="calc-card__title">3 · Electrolyte swaps</h2>
+          <p class="calc-card__desc">Liquid windows run swap-to-swap. Keep each swap ≥ 5 min from an injection; the first injection after each swap is excluded from its block by default.</p></header>
+        <div class="st-pad">
+          <div class="st-row"><button type="button" class="btn btn--ghost st-grow" id="sw-auto">Auto-place swaps mid-gap</button></div>
+          <div id="st-swaps"></div>
+        </div>
+      </article>
+
+      <!-- 4 Injections -->
+      <article class="calc-card" id="card-inj">
+        <header class="calc-card__header"><h2 class="calc-card__title">4 · GC injections</h2>
+          <p class="calc-card__desc">Enter E (V vs reference) and ppm at each injection. A blank ppm in an injection with data counts as 0 (not detected).</p></header>
+        <div class="st-pad">
+          <details class="st-fold"><summary>Products tracked</summary><div id="st-prodpick"></div></details>
+          <div class="st-row st-injnav">
+            <button type="button" class="btn btn--ghost" id="ij-prev" aria-label="Previous injection">‹</button>
+            <label class="st-grow"><span class="sr-only">Injection</span><select class="input" id="ij-sel"></select></label>
+            <button type="button" class="btn btn--ghost" id="ij-next" aria-label="Next injection">›</button>
+          </div>
+          <div class="st-row"><button type="button" class="btn btn--ghost st-grow" id="ij-now">Go to current injection</button></div>
+          <div id="st-inj-editor"></div>
+          <details class="st-fold"><summary>All injections</summary><div id="st-inj-list"></div></details>
+        </div>
+      </article>
+
+      <!-- 5 Blocks -->
+      <article class="calc-card" id="card-blocks">
+        <header class="calc-card__header"><h2 class="calc-card__title">5 · Gas FE by block</h2>
+          <p class="calc-card__desc">Mean ± SD (n − 1) over included injections in each block.</p></header>
+        <div class="st-pad">
+          <div class="st-chart" id="ch-gas"></div>
+          <div class="st-cards" id="st-blockcards"></div>
+        </div>
+      </article>
+
+      <!-- 6 Liquids -->
+      <article class="calc-card" id="card-liq">
+        <header class="calc-card__header"><h2 class="calc-card__title">6 · Liquid FE per electrolyte window</h2>
+          <p class="calc-card__desc">FE = n·F·(c<sub>WE</sub>·V<sub>WE</sub> + c<sub>CE</sub>·V<sub>CE</sub>)/Q, Q = |I|·Δt from the actual swap times unless you enter a measured Q. Record volumes at each swap (evaporation).</p></header>
+        <div class="st-pad">
+          <div class="st-chart" id="ch-liq"></div>
+          <div id="st-windows"></div>
+        </div>
+      </article>
+
+      <!-- 7 Stability check -->
+      <article class="calc-card" id="card-check">
+        <header class="calc-card__header"><h2 class="calc-card__title">7 · Stability check</h2>
+          <p class="calc-card__desc">Under CP a flat E alone does not prove stability. Read the E drift together with the H₂ and carbon-product FE trends and the GDE-back observations.</p></header>
+        <div class="st-pad">
+          <label class="field st-thr"><span class="field__label">H₂ warning threshold (percentage points above first block)</span><input class="input" inputmode="decimal" data-s="h2Thresh"></label>
+          <div id="st-check"></div>
+        </div>
+      </article>
+
+      <!-- 8 E vs t -->
+      <article class="calc-card" id="card-et">
+        <header class="calc-card__header"><h2 class="calc-card__title">8 · E vs t</h2>
+          <p class="calc-card__desc">Live from the E at each injection; swaps marked. After the run, load the Gamry .DTA for the full CP trace (shown downsampled, exported in full).</p></header>
+        <div class="st-pad">
+          <div class="st-chart" id="ch-et"></div>
+          <div class="st-row">
+            <label class="btn btn--secondary st-grow st-file">Load Gamry .DTA<input type="file" id="dta-file" accept=".DTA,.dta,.txt" hidden></label>
+            <button type="button" class="btn btn--ghost st-grow" id="dta-clear">Remove trace</button>
+          </div>
+          <p class="gc-hint" id="dta-info">No .DTA loaded. T in the file is taken as seconds from the run start.</p>
+        </div>
+      </article>
+
+      <!-- 9 Notes -->
+      <article class="calc-card" id="card-notes">
+        <header class="calc-card__header"><h2 class="calc-card__title">9 · Run notes</h2></header>
+        <div class="gc-grid">
+          <label class="field gc-wide"><span class="field__label">Run name</span><input class="input" data-s="runName" autocomplete="off" placeholder="e.g. TEAB CP 24 h, Cu/Sigracet 28BC"></label>
+          <label class="field gc-wide"><span class="field__label">Notes</span><textarea class="input st-notes" data-s="notes" rows="3"></textarea></label>
+          <div class="gc-wide st-row"><button type="button" class="btn btn--ghost st-grow" id="st-new">Start a new run (clear inputs)</button></div>
+        </div>
+      </article>
+    </main>
+
+    <footer class="app-footer">
+      <p>eCO₂RR calculator suite · stability test · Steve Pan · offline · <code>F = 96485.33212 C·mol⁻¹</code> · <span id="app-version">v</span></p>
+    </footer>
+  </div>
+
+  <dialog class="hx-dlg hx-dlg--list" id="st-runs-dlg" aria-labelledby="st-runs-title">
+    <div class="hx-dlg__body">
+      <header class="hx-dlg__head"><h2 id="st-runs-title">My stability runs</h2><button type="button" class="gc-x" data-close="st-runs-dlg" aria-label="Close">×</button></header>
+      <p class="hx-note"><b>Saved only on this device.</b> Every save is a new record. Back up regularly. <span class="hx-sub">Storage: <span id="st-backend">…</span></span></p>
+      <div class="hx-list" id="st-runs"></div>
+      <div class="hx-dlg__actions hx-backup">
+        <button type="button" class="btn btn--secondary" id="st-backup">Back up all (.json)</button>
+        <label class="btn btn--ghost hx-restore">Restore from file<input type="file" id="st-restore" accept="application/json,.json" hidden></label>
+      </div>
+    </div>
+  </dialog>
+  <div class="hx-toast" id="st-toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="../version.js"></script>
+  <script src="../pwa.js" data-sw="../sw.js" data-scope="../" defer></script>
+  <script src="../vendor/exceljs.min.js" defer></script>
+  <script src="./stability-core.js" defer></script>
+  <script src="./stability.js" defer></script>
+</body>
+</html>

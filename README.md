@@ -168,3 +168,25 @@ Files: `manifest.webmanifest`, `sw.js`, `pwa.js`, `version.js`, `icons/`.
 - **Hosting:** needs HTTPS (or `localhost`); serve the folder as static files from any HTTPS host. No server code is needed.
 - **Downloads:** on touch devices or in the installed app, exports use the Web Share API with files (Save to Files / Drive / email);
   otherwise a normal download is used.
+
+## Stability test page (v1.5.0) — `stability/`
+Phone-first page for a 24 h chronopotentiometry (CP) stability run: `stability/index.html` (+ `stability.css`, `stability.js`,
+`stability-core.js`). Linked from the main footer. Reuses `design-tokens.css`, `styles.css`, `version.js`, `pwa.js`
+(now accepts `data-sw` / `data-scope` on its script tag) and `vendor/exceljs.min.js`. All clock times are Singapore time (UTC+8).
+
+- **Schedule:** t_k = t_first + (k − 1)·interval (default 1287 s, editable; re-anchor to the actual time of injection #k);
+  block = floor((t_k − t0)/block length). Defaults (t0 Thu 26 Nov 2026 10:00, first injection 10:15, 4 h blocks, 24 h):
+  67 injections, blocks 1–11, 12–22, 23–33, 34–45, 46–56, 57–67, last Fri 09:50:42.
+- **Swaps:** default Thu 16:08:55, Thu 21:52:07, Fri 03:56:46 (mid-gap; "Auto-place swaps" recomputes them), final collection Fri 10:00.
+  Each has planned/logged times, "Log swap now", a ≥ 5 min injection guard, and a "droplets or salt on the back of the GDE" checkbox + note.
+  The first injection after each swap is excluded by default (18, 34, 51 with the defaults).
+- **Maths:** gas FE, partial j, iR (CI/manual) and E_RHE as in the GC tab; block mean ± sample SD over included injections;
+  liquid FE per window = n·F·(c_WE·V_WE + c_CE·V_CE)/Q with Q = |I|·Δt (actual swap times) or a measured Q.
+- **Stability check:** E drift (last − first block mean, mV), E spread (max − min), H₂ FE per block vs block 1 with an editable
+  warning threshold (default 5 pp), gas-carbon + time-weighted liquid FE per block, GDE-back observations.
+- **Gamry .DTA:** parses the `CURVE…<TAB>TABLE` table (T, Vf, Im); shown downsampled, exported in full; T = seconds from t0.
+- **Storage:** current inputs autosave to localStorage; "Save run" adds a new record to IndexedDB (`fecalc-stability`, localStorage fallback);
+  the .DTA trace is kept in IndexedDB only; backup/restore as .json.
+- **Export:** sheets `E_t`, `GC_injections`, `GC_block_avg`, `Liquid_windows`, `Stability_summary`, `Schedule`, `Meta_notes`;
+  flat, one header row with units, no merges, header frozen, live formulas with cached results.
+- **Tests:** `node test-stability.js`; `node make-sample-stability.js` writes `sample-stability-export.xlsx` (labelled example data).
